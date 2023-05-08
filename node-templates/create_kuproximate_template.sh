@@ -8,7 +8,7 @@ apt install libguestfs-tools -y
 # Set the CODENAME from $1, this is the lowercase short version... ie jammy from Jammy Jellyfish
 CODENAME=$1
 
-# Set the VMID from $2, this should be the next available 9xxx number, check pmx-01 gui.
+# Set the VMID from $2
 VMID=$2
 
 ## If it doesn't already exist download a new CODENAME image ie. https://cloud-images.ubuntu.com/kinetic/current/kinetic-server-cloudimg-amd64.img
