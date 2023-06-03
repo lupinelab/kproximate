@@ -143,25 +143,20 @@ func (p *Proxmox) GetKpNode(kpNodeName string) (VmInformation, error) {
 	return VmInformation{}, fmt.Errorf("could not find proxmox vm called %s", kpNodeName)
 }
 
-func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateName string) VMConfig {
-	vmRef, err := p.Client.GetVmRefByName(kpNodeTemplateName)
+func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfig, error) {
+	config, err := p.Client.GetVmConfig(kpNodeTemplateRef)
 	if err != nil {
-		panic(err.Error())
-	}
-
-	config, err := p.Client.GetVmConfig(vmRef)
-	if err != nil {
-		panic(err.Error())
+		return VMConfig{}, err
 	}
 
 	var vmConfig VMConfig
 
 	err = mapstructure.Decode(config, &vmConfig)
 	if err != nil {
-		panic(err.Error())
+		return VMConfig{}, err
 	}
 
-	return vmConfig
+	return vmConfig, err
 }
 
 func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, targetNode string) (string, error) {
@@ -189,7 +184,7 @@ func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, targetNode string) (st
 		newVmRef, err := p.Client.GetVmRefByName(newName)
 		if err != nil {
 			retry++
-			if retry >= 15 {
+			if retry == 15 {
 				return newName, err
 			}
 			time.Sleep(1 * time.Second)

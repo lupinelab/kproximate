@@ -51,13 +51,16 @@ func NewKubernetesClient() *Kubernetes {
 	return kubernetes
 }
 
-func (k *Kubernetes) GetUnschedulableResources() *UnschedulableResources {
+func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error) {
 	var rCpu float64
 	var rMemory float64
 
-	pods, err := k.client.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	pods, err := k.client.CoreV1().Pods("").List(
+		context.TODO(),
+		metav1.ListOptions{},
+	)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
 	for _, pod := range pods.Items {
@@ -82,11 +85,14 @@ func (k *Kubernetes) GetUnschedulableResources() *UnschedulableResources {
 		Memory: int64(rMemory),
 	}
 
-	return unschedulableResources
+	return unschedulableResources, err
 }
 
 func (k *Kubernetes) GetNodes() ([]apiv1.Node, error) {
-	nodes, err := k.client.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	nodes, err := k.client.CoreV1().Nodes().List(
+		context.TODO(), 
+		metav1.ListOptions{},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -107,29 +113,45 @@ func (k *Kubernetes) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
 	return pods.Items, err
 }
 
+func (k *Kubernetes) GetEmptyNodes() ([]apiv1.Node, error) {
+	nodes, err := k.GetNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	var emptyNodes []apiv1.Node
+
+	for _, node := range nodes {
+		pods, err := k.client.CoreV1().Pods("").List(
+			context.TODO(),
+			metav1.ListOptions{
+				FieldSelector: fmt.Sprintf("spec.nodeName=%s", node.Name),
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(pods.Items) == 0 {
+			emptyNodes = append(emptyNodes, node)
+		}
+	}
+
+	return emptyNodes, err
+}
+
 func (k *Kubernetes) CheckKpNodeReady(newKpNodeName string) bool {
-	newkpNode, _ := k.client.CoreV1().Nodes().Get(context.TODO(), newKpNodeName, metav1.GetOptions{})
+	newkpNode, _ := k.client.CoreV1().Nodes().Get(
+		context.TODO(),
+		newKpNodeName,
+		metav1.GetOptions{},
+	)
 
 	for _, condition := range newkpNode.Status.Conditions {
 		if condition.Type == apiv1.NodeReady && condition.Status == apiv1.ConditionTrue {
 			return true
 		}
 	}
-
-	// nodes, err := k.GetNodes()
-	// if err != nil {
-	// 	return false, err
-	// }
-
-	// for _, node := range nodes {
-	// 	if strings.Contains(node.Name, newKpNodeName) {
-	// 		for _, condition := range node.Status.Conditions {
-	// 			if condition.Type == apiv1.NodeReady && condition.Status == apiv1.ConditionTrue {
-	// 				return true, err
-	// 			}
-	// 		}
-	// 	}
-	// }
 
 	return false
 }
@@ -149,7 +171,11 @@ func (k *Kubernetes) DeleteKpNode(kpNodeName string) error {
 		k.EvictPod(pod.Name, pod.Namespace)
 	}
 
-	err = k.client.CoreV1().Nodes().Delete(context.TODO(), kpNodeName, metav1.DeleteOptions{})
+	err = k.client.CoreV1().Nodes().Delete(
+		context.TODO(),
+		kpNodeName,
+		metav1.DeleteOptions{},
+	)
 	if err != nil {
 		return err
 	}
@@ -158,23 +184,33 @@ func (k *Kubernetes) DeleteKpNode(kpNodeName string) error {
 }
 
 func (k *Kubernetes) CordonKpNode(KpNodeName string) error {
-	kpNode, err := k.client.CoreV1().Nodes().Get(context.TODO(), KpNodeName, metav1.GetOptions{})
+	kpNode, err := k.client.CoreV1().Nodes().Get(
+		context.TODO(),
+		KpNodeName,
+		metav1.GetOptions{},
+	)
 	if err != nil {
 		return err
 	}
 
 	kpNode.Spec.Unschedulable = true
 
-	_, err = k.client.CoreV1().Nodes().Update(context.TODO(), kpNode, metav1.UpdateOptions{})
+	_, err = k.client.CoreV1().Nodes().Update(
+		context.TODO(),
+		kpNode,metav1.UpdateOptions{},
+	)
 
 	return err
 }
 
 func (k *Kubernetes) EvictPod(podName, namespace string) error {
-	return k.client.PolicyV1().Evictions(namespace).Evict(context.TODO(), &policy.Eviction{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName,
-			Namespace: namespace,
+	return k.client.PolicyV1().Evictions(namespace).Evict(
+		context.TODO(),
+		&policy.Eviction{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      podName,
+				Namespace: namespace,
+			},
 		},
-	})
+	)
 }
