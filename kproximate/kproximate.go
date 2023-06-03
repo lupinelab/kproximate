@@ -1,31 +1,29 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/lupinelab/kproximate/scaler"
 )
 
 func main() {
-	kpsConfig := scaler.GetConfig()
-	kpsScaler := scaler.NewScaler(*kpsConfig)
+	kpConfig := scaler.GetConfig()
+	kpScaler := scaler.NewScaler(*kpConfig)
 
-	kpsScaler.Start()
+	kpScaler.Start()
 
-	// P
-	kpnodes := kpsScaler.PCluster.GetKpsNodes()
-	for _, kpnode := range kpnodes {
-		fmt.Println(kpnode.Name)
-	}
+	// // P
+	// kpnodes := kpScaler.pCluster.GetKpNodes()
+	// for _, kpnode := range kpnodes {
+	// 	fmt.Println(kpnode.Name)
+	// }
 
-	kpsScaler.PCluster.GetClusterStats()
+	// kpScaler.PCluster.GetClusterStats()
 
-	// K
-	kpsScaler.KCluster.GetUnschedulableResources()
+	// // K
+	// kpScaler.KCluster.GetUnschedulableResources()
 
-	// New KPNode
-	// fmt.Println(pClient.NewKpNode(kpNodeTemplateName, "qtiny-02"))
+	// // New KPNode
+	// // fmt.Println(pClient.NewKpNode(kpNodeTemplateName, "qtiny-02"))
 
-	kpsTemplateConfig := kpsScaler.PCluster.GetKpsTemplateConfig(kpsConfig.KpsNodeTemplateName)
-	fmt.Println(kpsTemplateConfig.Cores)
+	// kpTemplateConfig := kpScaler.PCluster.GetKpTemplateConfig(kpConfig.KpNodeTemplateName)
+	// fmt.Println(kpTemplateConfig.Cores)
 }

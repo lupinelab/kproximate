@@ -10,8 +10,8 @@ type Config struct {
 	PMUserID           string `env:"PMUserID"`
 	PMToken            string `env:"PMToken"`
 	AllowInsecure           bool   `env:"Insecure"`
-	KpsNodeTemplateName string `env:"KPNodeTemplateName"`
-	MaxKpsNodes         int    `env:"MaxKPNodes"`
+	KpNodeTemplateName string `env:"KPNodeTemplateName"`
+	MaxKpNodes         int    `env:"MaxKPNodes"`
 }
 
 func GetConfig() *Config {
