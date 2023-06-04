@@ -9,7 +9,6 @@ import (
 
 	"github.com/Telmate/proxmox-api-go/proxmox"
 	"github.com/mitchellh/mapstructure"
-	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 type NodeList struct {
@@ -84,14 +83,6 @@ func (p *Proxmox) GetClusterStats() []NodeInformation {
 		panic(err.Error())
 	}
 
-	for _, node := range pnodes.Data {
-		fmt.Println(node.Node, "\n========")
-		fmt.Println("CPU: ", node.Cpu)
-		fmt.Printf("Free Memory(MiB): %v\n", (node.Maxmem-node.Mem)>>20)
-		fmt.Println("Status: ", node.Status)
-		fmt.Println("")
-	}
-
 	return pnodes.Data
 }
 
@@ -159,16 +150,14 @@ func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfi
 	return vmConfig, err
 }
 
-func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, targetNode string) (string, error) {
+func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, newKpNodeName string, targetNode string) error {
 	nextID, err := p.Client.GetNextID(650)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	newName := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
-
 	cloneParams := map[string]interface{}{
-		"name":   newName,
+		"name":   newKpNodeName,
 		"newid":  nextID,
 		"target": targetNode,
 		"vmid":   kpNodeTemplate.VmId(),
@@ -176,28 +165,28 @@ func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, targetNode string) (st
 
 	_, err = p.Client.CloneQemuVm(&kpNodeTemplate, cloneParams)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	retry := 0
 	for retry < 15 {
-		newVmRef, err := p.Client.GetVmRefByName(newName)
+		newVmRef, err := p.Client.GetVmRefByName(newKpNodeName)
 		if err != nil {
 			retry++
 			if retry == 15 {
-				return newName, err
+				return err
 			}
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		_, err = p.Client.StartVm(newVmRef)
 		if err != nil {
-			return newName, err
+			return err
 		}
 		break
 	}
 
-	return newName, err
+	return err
 }
 
 func (p *Proxmox) DeleteKpNode(kpNodeName string) error {
