@@ -34,9 +34,8 @@ virt-resize --format raw --expand /dev/sda1 $IMG $NEWDISK
 virt-customize \
         -a $NEWDISK \   
         --install qemu-guest-agent,nfs-common,containerd,runc \
-        --mkdir /home/ubuntu/.ssh \
-        --append-line "/home/ubuntu/.ssh/authorized_keys:<add_ssh_pub_key>" \
         --firstboot-command "curl -sfL https://get.k3s.io | K3S_URL=<K3S URL>:6443 K3S_TOKEN=<K3S_TOKEN> sh -" ## Add your K3s URL and token
+        --truncate /etc/machine-id
 
 # Build a vm from which to create a proxmox template
 # Ensure you tag you template to the required vlan or remove the tag

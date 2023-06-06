@@ -1,8 +1,6 @@
 package main
 
-import (
-	"github.com/lupinelab/kproximate/scaler"
-)
+import "github.com/lupinelab/kproximate/scaler"
 
 func main() {
 	kpConfig := scaler.GetConfig()

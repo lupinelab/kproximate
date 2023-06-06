@@ -150,7 +150,7 @@ func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfi
 	return vmConfig, err
 }
 
-func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, newKpNodeName string, targetNode string) error {
+func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}) error {
 	nextID, err := p.Client.GetNextID(650)
 	if err != nil {
 		return err
@@ -179,6 +179,12 @@ func (p *Proxmox) NewKpNode(kpNodeTemplate proxmox.VmRef, newKpNodeName string, 
 			time.Sleep(1 * time.Second)
 			continue
 		}
+
+		 _, err = p.Client.SetVmConfig(newVmRef, kpNodeParams)
+		if err != nil {
+			return err
+		}
+
 		_, err = p.Client.StartVm(newVmRef)
 		if err != nil {
 			return err

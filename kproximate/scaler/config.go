@@ -2,23 +2,27 @@ package scaler
 
 import (
 	"context"
+
 	"github.com/sethvargo/go-envconfig"
 )
 
 type Config struct {
-	PMUrl			string	`env:"PMUrl"`
-	PMUserID           string `env:"PMUserID"`
-	PMToken            string `env:"PMToken"`
-	AllowInsecure           bool   `env:"Insecure"`
-	KpNodeTemplateName string `env:"KPNodeTemplateName"`
-	MaxKpNodes         int    `env:"MaxKPNodes"`
+	PmUrl              string `env:"pmUrl"`
+	PmUserID           string `env:"pmUserID"`
+	PmToken            string `env:"pmToken"`
+	AllowInsecure      bool   `env:"allowInsecure"`
+	KpNodeTemplateName string `env:"kpNodeTemplateName"`
+	MaxKpNodes         int    `env:"maxKPNodes"`
+	SshKey             string `env:"sshKey"`
 }
 
 func GetConfig() *Config {
 	config := &Config{}
+
 	err := envconfig.Process(context.Background(), config)
 	if err != nil {
 		panic(err.Error())
 	}
+
 	return config
 }
