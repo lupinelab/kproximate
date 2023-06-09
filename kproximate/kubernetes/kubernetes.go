@@ -140,20 +140,20 @@ func (k *Kubernetes) GetEmptyNodes() ([]apiv1.Node, error) {
 	return emptyNodes, err
 }
 
-func (k *Kubernetes) CheckKpNodeReady(newKpNodeName string) bool {
-	newkpNode, _ := k.client.CoreV1().Nodes().Get(
-		context.TODO(),
-		newKpNodeName,
-		metav1.GetOptions{},
-	)
+func (k *Kubernetes) WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
+	for {
+		newkpNode, _ := k.client.CoreV1().Nodes().Get(
+			context.TODO(),
+			newKpNodeName,
+			metav1.GetOptions{},
+		)
 
-	for _, condition := range newkpNode.Status.Conditions {
-		if condition.Type == apiv1.NodeReady && condition.Status == apiv1.ConditionTrue {
-			return true
+		for _, condition := range newkpNode.Status.Conditions {
+			if condition.Type == apiv1.NodeReady && condition.Status == apiv1.ConditionTrue {
+				ok <- true
+			}
 		}
 	}
-
-	return false
 }
 
 func (k *Kubernetes) DeleteKpNode(kpNodeName string) error {
