@@ -108,6 +108,7 @@ func (scaler *KProximateScaler) Start() {
 
 		if scaler.numKpNodes() < scaler.maxKpNodes {
 			scaler.selectTargetPHosts(requiredScaleEvents)
+			
 			for _, scaleEvent := range requiredScaleEvents {
 				
 				ctx := context.Background()
@@ -118,6 +119,7 @@ func (scaler *KProximateScaler) Start() {
 				// scaleEvent, otherwise it can attempt to duplicate the VMID
 				time.Sleep(time.Second)
 			}
+
 		} else if len(requiredScaleEvents) > 0 {
 			warningLog.Printf("Already at max nodes: %v", scaler.maxKpNodes)
 		}
@@ -275,7 +277,16 @@ ktimeout:
 		atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
 		infoLog.Printf("Scale state: %+d", scaler.scaleState)
 
-		scaler.cleaupFailedKJoin(*scaleEvent)
+		infoLog.Printf("Cleaning up failed scale attempt: %s", scaleEvent.kpNodeName)
+
+		err := scaler.cleaupFailedKJoin(*scaleEvent)
+		if err != nil {
+			errorLog.Printf("Cleanup failed for %s: %s", scaleEvent.kpNodeName, err.Error())
+		}
+		
+		infoLog.Printf("Deleted %s", scaleEvent.kpNodeName)
+
+		return
 	
 	case <- ok:
 		break ktimeout
@@ -286,7 +297,6 @@ ktimeout:
 	atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
 	infoLog.Printf("Scale state: %+d", scaler.scaleState)
 			
-
 	// Allow new kNodes a grace period of emptiness before they are targets for cleanup
 	go scaler.newNodeBackOff(*scaleEvent)
 }
@@ -315,20 +325,10 @@ func (scaler *KProximateScaler) cleaupFailedVm(kpNodeName string) error {
 	return err
 }
 
-func (scaler *KProximateScaler) cleaupFailedKJoin(scaleEvent scaleEvent) {
-	errorLog.Printf("Timeout waiting for %s to join the cluster: ", scaleEvent.kpNodeName)
-
-	delete(scaler.scaleEvents, scaleEvent.kpNodeName)
-	infoLog.Printf("Scale state: %+d", scaler.scaleState)
-
-	infoLog.Printf("Cleaning up failed scale attempt: %s", scaleEvent.kpNodeName)
-
+func (scaler *KProximateScaler) cleaupFailedKJoin(scaleEvent scaleEvent) error {
 	err := scaler.deleteKpNode(scaleEvent.kpNodeName)
-	if err != nil {
-		errorLog.Printf("Cleanup failed for %s: %s", scaleEvent.kpNodeName, err.Error())
-		return
-	}
-	infoLog.Printf("Deleted %s", scaleEvent.kpNodeName)
+
+	return err
 }
 
 // Allow new kNodes a grace period before they are targets for cleanUp
