@@ -72,19 +72,19 @@ func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_toke
 }
 
 func (p *Proxmox) GetClusterStats() []PHostInformation {
-	nodelist, err := p.Client.GetResourceList("node")
+	hostList, err := p.Client.GetResourceList("node")
 	if err != nil {
 		panic(err.Error())
 	}
 
-	var pnodes pHostList
+	var pHosts []PHostInformation
 
-	err = mapstructure.Decode(nodelist, &pnodes)
+	err = mapstructure.Decode(hostList, &pHosts)
 	if err != nil {
 		panic(err.Error())
 	}
 
-	return pnodes.Data
+	return pHosts
 }
 
 func (p *Proxmox) GetKpNodes() []VmInformation {
@@ -145,7 +145,7 @@ func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- 
 	nextID, err := p.Client.GetNextID(650)
 	if err != nil {
 		errchan <- err
-		return 
+		return
 	}
 
 	cloneParams := map[string]interface{}{
@@ -158,10 +158,10 @@ func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- 
 	_, err = p.Client.CloneQemuVm(&kpNodeTemplate, cloneParams)
 	if err != nil {
 		errchan <- err
-		return 
+		return
 	}
 
-	for  {
+	for {
 		newVmRef, err := p.Client.GetVmRefByName(newKpNodeName)
 		if err != nil {
 			time.Sleep(1 * time.Second)
@@ -171,22 +171,22 @@ func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- 
 		_, err = p.Client.SetVmConfig(newVmRef, kpNodeParams)
 		if err != nil {
 			errchan <- err
-			return 
+			return
 		}
 
 		_, err = p.Client.StartVm(newVmRef)
 		if err != nil {
 			errchan <- err
-			return 
+			return
 		}
 		break
 	}
-	
+
 	ok <- true
 }
 
 func (p *Proxmox) DeleteKpNode(kpNodeName string) error {
-	kpNode:= p.GetKpNode(kpNodeName)
+	kpNode := p.GetKpNode(kpNodeName)
 
 	vmRef, err := p.Client.GetVmRefByName(kpNode.Name)
 	if err != nil {

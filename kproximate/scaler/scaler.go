@@ -93,8 +93,12 @@ func NewScaler(config Config) *KProximateScaler {
 // }
 
 func (scaler *KProximateScaler) numKpNodes() int {
-	currentKpNodes := len(scaler.pCluster.GetKpNodes())
-	return currentKpNodes + int(scaler.scaleState)
+	kpNodes, err := scaler.kCluster.GetKpNodes()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return len(kpNodes) + int(scaler.scaleState)
 }
 
 func (scaler *KProximateScaler) Start() {
@@ -113,7 +117,7 @@ func (scaler *KProximateScaler) Start() {
 				
 				ctx := context.Background()
 
-				go scaler.scale(ctx, &scaleEvent)
+				go scaler.scale(ctx, scaleEvent)
 
 				// Kick off the scaling events 1 second apart to allow proxmox some time to start the first
 				// scaleEvent, otherwise it can attempt to duplicate the VMID
@@ -121,7 +125,7 @@ func (scaler *KProximateScaler) Start() {
 			}
 
 		} else if len(requiredScaleEvents) > 0 {
-			warningLog.Printf("Already at max nodes: %v", scaler.maxKpNodes)
+			warningLog.Printf("Scale requested but already at max kp-nodes: %v", scaler.maxKpNodes)
 		}
 
 		cleanUpErr := scaler.cleanUpEmptyNodes()
@@ -135,8 +139,8 @@ func (scaler *KProximateScaler) Start() {
 	}
 }
 
-func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources) []scaleEvent {
-	requiredScaleEvents := []scaleEvent{}
+func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources) []*scaleEvent {
+	requiredScaleEvents := []*scaleEvent{}
 	var numCpuNodesRequired int
 	var numMemoryNodesRequired int
 
@@ -157,7 +161,7 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	for kpNode := 1; kpNode <= numNodesRequired; kpNode++ {
 		newName := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
 
-		requiredEvent := scaleEvent{
+		requiredEvent := &scaleEvent{
 			scaleType:  1,
 			kpNodeName: newName,
 		}
@@ -168,26 +172,30 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	return requiredScaleEvents
 }
 
-func (scaler *KProximateScaler) selectTargetPHosts(scaleEvents []scaleEvent) []scaleEvent {
+func (scaler *KProximateScaler) selectTargetPHosts(scaleEvents []*scaleEvent) {
 	pHosts := scaler.pCluster.GetClusterStats()
 	kpNodes := scaler.pCluster.GetKpNodes()	
-	
-	for _, scaleEvent := range scaleEvents{
-		// Select a pNode without a kpNode on it or currently being provisioned on it
+
+selected:
+	for _, scaleEvent := range scaleEvents {
+	skipHost:	
 		for _, pHost := range pHosts {
-				for _, kpNode := range kpNodes {
-					// Check for an existing kpNode on the pHost
-					if kpNode.Node == pHost.Id {
-						continue
-					}
+			// Check for a scaleEvent targeting the pHost
+			for _, scaleEvent := range scaleEvents {
+				if scaleEvent.targetPHost.Id == pHost.Id {
+					continue skipHost
 				}
-				// Check for a scaleEvent targeting the pHost
-				for _, event := range scaleEvents {
-					if event.targetPHost.Node == pHost.Id {
-						continue
-					}
-					scaleEvent.targetPHost = pHost
-				}		
+			}
+
+			for _, kpNode := range kpNodes {
+				// Check for an existing kpNode on the pHost
+				if strings.Contains(pHost.Id, kpNode.Node)  {
+					continue skipHost
+				}
+			}
+
+			scaleEvent.targetPHost = pHost
+			continue selected
 		}
 		// Else select a node with the most available memory
 		var maxAvailMemNode kproxmox.PHostInformation
@@ -201,7 +209,7 @@ func (scaler *KProximateScaler) selectTargetPHosts(scaleEvents []scaleEvent) []s
 		scaleEvent.targetPHost = maxAvailMemNode
 	}
 
-	return scaleEvents
+	return
 }
 
 func (scaler *KProximateScaler) scale(ctx context.Context, scaleEvent *scaleEvent) {
@@ -298,11 +306,11 @@ ktimeout:
 	infoLog.Printf("Scale state: %+d", scaler.scaleState)
 			
 	// Allow new kNodes a grace period of emptiness before they are targets for cleanup
-	go scaler.newNodeBackOff(*scaleEvent)
+	go scaler.newKpNodeBackOff(*scaleEvent)
 }
 
 func (scaler *KProximateScaler) cleaupFailedVm(kpNodeName string) error {
-	kpNodes, err := scaler.kCluster.GetNodes()
+	kpNodes, err := scaler.kCluster.GetKpNodes()
 	if err != nil {
 		return err
 	}
@@ -332,7 +340,7 @@ func (scaler *KProximateScaler) cleaupFailedKJoin(scaleEvent scaleEvent) error {
 }
 
 // Allow new kNodes a grace period before they are targets for cleanUp
-func (scaler *KProximateScaler) newNodeBackOff(scaleEvent scaleEvent) {
+func (scaler *KProximateScaler) newKpNodeBackOff(scaleEvent scaleEvent) {
 	time.Sleep(time.Second * 120)
 	delete(scaler.newNodes, scaleEvent.kpNodeName)
 }
@@ -352,7 +360,7 @@ func (scaler *KProximateScaler) deleteKpNode(kpNodeName string) error {
 }
 
 func (scaler *KProximateScaler) cleanUpEmptyNodes() error {
-	emptyKpNodes, err := scaler.kCluster.GetEmptyNodes()
+	emptyKpNodes, err := scaler.kCluster.GetEmptyKpNodes()
 	if err != nil {
 		return err
 	}

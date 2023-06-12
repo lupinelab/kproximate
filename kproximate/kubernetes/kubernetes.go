@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -88,15 +89,26 @@ func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error
 	return unschedulableResources, err
 }
 
-func (k *Kubernetes) GetNodes() ([]apiv1.Node, error) {
+func (k *Kubernetes) GetKpNodes() ([]apiv1.Node, error) {
 	nodes, err := k.client.CoreV1().Nodes().List(
-		context.TODO(), 
+		context.TODO(),
 		metav1.ListOptions{},
 	)
 	if err != nil {
 		return nil, err
 	}
-	return nodes.Items, err
+
+	var kpNodes []apiv1.Node
+
+	var kpNodeName = regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`)
+
+	for _, kpNode := range nodes.Items {
+		if kpNodeName.MatchString(kpNode.Name) {
+			kpNodes = append(kpNodes, kpNode)
+		}
+	}
+	
+	return kpNodes, err
 }
 
 func (k *Kubernetes) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
@@ -113,8 +125,8 @@ func (k *Kubernetes) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
 	return pods.Items, err
 }
 
-func (k *Kubernetes) GetEmptyNodes() ([]apiv1.Node, error) {
-	nodes, err := k.GetNodes()
+func (k *Kubernetes) GetEmptyKpNodes() ([]apiv1.Node, error) {
+	nodes, err := k.GetKpNodes()
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +209,7 @@ func (k *Kubernetes) CordonKpNode(KpNodeName string) error {
 
 	_, err = k.client.CoreV1().Nodes().Update(
 		context.TODO(),
-		kpNode,metav1.UpdateOptions{},
+		kpNode, metav1.UpdateOptions{},
 	)
 
 	return err
