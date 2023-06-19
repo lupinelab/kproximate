@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kproximate.fullname" . }}
+data:
+  pmUrl: {{ .Values.kproximate.pmUrl | quote| required ".Values.kproximate.pmUrl is required" }}
+  pmUserID: {{ .Values.kproximate.pmUserID | quote | required ".Values.kproximate.pmUserID is required" }}
+  allowInsecure: {{ .Values.kproximate.allowInsecure | quote }}
+  emptyGraceSecondsAfterCreation: {{ .Values.kproximate.emptyGraceSecondsAfterCreation | quote }}
+  maxKPNodes: {{ .Values.kproximate.maxKPNodes | quote }}
+  kpNodeTemplateName: {{ .Values.kproximate.kpNodeTemplateName | quote | required ".Values.kproximate.kpNodeTemplateName is required" }}
+  kpNodeCores: {{ .Values.kproximate.kpNodeCores | quote }}
+  kpnodeMemory: {{ .Values.kproximate.kpNodeMemory | quote }}

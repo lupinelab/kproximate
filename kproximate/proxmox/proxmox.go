@@ -87,7 +87,33 @@ func (p *Proxmox) GetClusterStats() []PHostInformation {
 	return pHosts
 }
 
-func (p *Proxmox) GetKpNodes() []VmInformation {
+func (p *Proxmox) GetRunningKpNodes() []VmInformation {
+	vmlist, err := p.Client.GetVmList()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	var kpnodes vmList
+
+	err = mapstructure.Decode(vmlist, &kpnodes)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	var kpNodes []VmInformation
+
+	var kpNodeName = regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`)
+
+	for _, vm := range kpnodes.Data {
+		if kpNodeName.MatchString(vm.Name) && vm.Status == "running" {
+			kpNodes = append(kpNodes, vm)
+		}
+	}
+
+	return kpNodes
+}
+
+func (p *Proxmox) GetAllKpNodes() []VmInformation {
 	vmlist, err := p.Client.GetVmList()
 	if err != nil {
 		panic(err.Error())
@@ -114,7 +140,7 @@ func (p *Proxmox) GetKpNodes() []VmInformation {
 }
 
 func (p *Proxmox) GetKpNode(kpNodeName string) VmInformation {
-	kpNodes := p.GetKpNodes()
+	kpNodes := p.GetAllKpNodes()
 
 	for _, vm := range kpNodes {
 		if strings.Contains(vm.Name, kpNodeName) {

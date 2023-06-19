@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -12,7 +13,9 @@ import (
 	policy "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/homedir"
 )
 
@@ -29,15 +32,21 @@ func NewKubernetesClient() *Kubernetes {
 	var kubeconfig *string
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+		flag.Parse()
 	}
-	flag.Parse()
 
-	// use the current context in kubeconfig
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err != nil {
-		panic(err.Error())
+	var config *rest.Config
+
+	if _, err := os.Stat(*kubeconfig); err == nil {
+		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
+		if err != nil {
+			panic(err.Error())
+		}
+	} else {
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			panic(err.Error())
+		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
@@ -50,6 +59,21 @@ func NewKubernetesClient() *Kubernetes {
 	}
 
 	return kubernetes
+}
+
+func (k *Kubernetes) GetNewLock(podName string, namespace string) *resourcelock.LeaseLock {
+	var lock = &resourcelock.LeaseLock{
+		LeaseMeta: metav1.ObjectMeta{
+			Name:      "kproximate-leader-lease",
+			Namespace: namespace,
+		},
+		Client: k.client.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity: podName,
+		},
+	}
+
+	return lock
 }
 
 func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error) {
@@ -89,6 +113,29 @@ func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error
 	return unschedulableResources, err
 }
 
+func (k *Kubernetes) GetFailedSchedulingDueToControlPlaneTaint() (bool , error) {
+	pods, err := k.client.CoreV1().Pods("").List(
+		context.TODO(),
+		metav1.ListOptions{},
+	)
+	if err != nil {
+		return false, err
+	}
+
+	for _, pod := range pods.Items {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == apiv1.PodScheduled && condition.Status == apiv1.ConditionFalse && condition.Reason == "Unschedulable" {
+				if strings.Contains(condition.Message, "untolerated taint {node-role.kubernetes.io/control-plane: }") {
+
+					return true, nil
+				}
+			}
+		}
+	}
+
+	return false, nil
+}
+
 func (k *Kubernetes) GetKpNodes() ([]apiv1.Node, error) {
 	nodes, err := k.client.CoreV1().Nodes().List(
 		context.TODO(),
@@ -107,7 +154,7 @@ func (k *Kubernetes) GetKpNodes() ([]apiv1.Node, error) {
 			kpNodes = append(kpNodes, kpNode)
 		}
 	}
-	
+
 	return kpNodes, err
 }
 
