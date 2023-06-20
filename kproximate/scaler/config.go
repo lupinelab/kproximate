@@ -9,18 +9,20 @@ import (
 )
 
 type Config struct {
-	PmUrl                          string `env:"pmUrl"`
-	PmUserID                       string `env:"pmUserID"`
-	PmToken                        string `env:"pmToken"`
-	AllowInsecure                  bool   `env:"allowInsecure"`
-	EmptyGraceSecondsAfterCreation int    `env:"emptyGraceSecondsAfterCreation"`
-	KpNodeTemplateName             string `env:"kpNodeTemplateName"`
+	AllowInsecure                  bool    `env:"allowInsecure"`
+	EmptyGraceSecondsAfterCreation int     `env:"emptyGraceSecondsAfterCreation"`
+	KpNodeCores                    int     `env:"kpNodeCores"`
+	KpNodeHeadroom                 float64 `env:"kpNodeHeadroom"`
+	KpNodeMemory                   int     `env:"kpNodeMemory"`
 	kpNodeParams                   map[string]interface{}
 	kpNodeTemplateConfig           kproxmox.VMConfig
+	KpNodeTemplateName             string `env:"kpNodeTemplateName"`
 	kpNodeTemplateRef              proxmox.VmRef
-	KPNodeCores                    string `env:"kpNodeCores"`
-	KPNodeMemory                   string `env:"kpNodeMemory"`
 	MaxKpNodes                     int    `env:"maxKPNodes"`
+	PmDebug                        bool   `env:"pmDebug"`
+	PmToken                        string `env:"pmToken"`
+	PmUrl                          string `env:"pmUrl"`
+	PmUserID                       string `env:"pmUserID"`
 	SshKey                         string `env:"sshKey"`
 }
 

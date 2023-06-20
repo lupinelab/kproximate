@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1"
@@ -26,6 +27,11 @@ type Kubernetes struct {
 type UnschedulableResources struct {
 	Cpu    float64
 	Memory int64
+}
+
+type AllocatedResources struct {
+	Cpu    float64
+	Memory float64
 }
 
 func NewKubernetesClient() *Kubernetes {
@@ -113,7 +119,7 @@ func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error
 	return unschedulableResources, err
 }
 
-func (k *Kubernetes) GetFailedSchedulingDueToControlPlaneTaint() (bool , error) {
+func (k *Kubernetes) GetFailedSchedulingDueToControlPlaneTaint() (bool, error) {
 	pods, err := k.client.CoreV1().Pods("").List(
 		context.TODO(),
 		metav1.ListOptions{},
@@ -172,6 +178,41 @@ func (k *Kubernetes) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
 	return pods.Items, err
 }
 
+func (k *Kubernetes) GetKpNodesAllocatedResources() (map[string]*AllocatedResources, error) {
+	kpNodes, err := k.GetKpNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	allocatedResources := map[string]*AllocatedResources{}
+
+	for _, kpNode := range kpNodes {
+		allocatedResources[kpNode.Name] = &AllocatedResources{
+			Cpu:    0,
+			Memory: 0,
+		}
+
+		pods, err := k.client.CoreV1().Pods("").List(
+			context.TODO(),
+			metav1.ListOptions{
+				FieldSelector: fmt.Sprintf("spec.nodeName=%s", kpNode.Name),
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, pod := range pods.Items {
+			for _, container := range pod.Spec.Containers {
+				allocatedResources[kpNode.Name].Cpu += container.Resources.Requests.Cpu().AsApproximateFloat64()
+				allocatedResources[kpNode.Name].Memory += container.Resources.Requests.Memory().AsApproximateFloat64()
+			}
+		}
+	}
+
+	return allocatedResources, err
+}
+
 func (k *Kubernetes) GetEmptyKpNodes() ([]apiv1.Node, error) {
 	nodes, err := k.GetKpNodes()
 	if err != nil {
@@ -227,6 +268,34 @@ func (k *Kubernetes) DeleteKpNode(kpNodeName string) error {
 	}
 
 	for _, pod := range pods {
+		k.EvictPod(pod.Name, pod.Namespace)
+	}
+
+	err = k.client.CoreV1().Nodes().Delete(
+		context.TODO(),
+		kpNodeName,
+		metav1.DeleteOptions{},
+	)
+	if err != nil {
+		return err
+	}
+
+	return err
+}
+
+func (k *Kubernetes) SlowDeleteKpNode(kpNodeName string) error {
+	err := k.CordonKpNode(kpNodeName)
+	if err != nil {
+		return err
+	}
+
+	pods, err := k.GetNodePods(kpNodeName)
+	if err != nil {
+		return err
+	}
+
+	for _, pod := range pods {
+		time.Sleep(time.Second * 3)
 		k.EvictPod(pod.Name, pod.Namespace)
 	}
 

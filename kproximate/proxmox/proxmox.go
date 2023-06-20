@@ -54,7 +54,7 @@ type Proxmox struct {
 	Client *proxmox.Client
 }
 
-func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_token string) *Proxmox {
+func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_token string, debug bool) *Proxmox {
 	tlsconf := &tls.Config{InsecureSkipVerify: allowinsecure}
 	newClient, err := proxmox.NewClient(pm_url, nil, "", tlsconf, "", 300)
 	if err != nil {
@@ -62,7 +62,7 @@ func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_toke
 	}
 	newClient.SetAPIToken(pm_user, pm_token)
 
-	// *proxmox.Debug = true
+	*proxmox.Debug = debug
 
 	proxmox := &Proxmox{
 		Client: newClient,

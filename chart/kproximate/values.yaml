@@ -3,15 +3,17 @@
 # Declare variables to be passed into your templates.
 
 kproximate:
+  pmDebug: false
   pmUrl: null
   pmToken: null
   pmUserID: null
   allowInsecure: false
   emptyGraceSecondsAfterCreation: 120
-  maxKPNodes: "3"
+  maxKPNodes: 3
+  kpNodeHeadroom: 0.2
   kpNodeTemplateName: null
-  kpNodeCores: "2"
-  kpNodeMemory: "2048"
+  kpNodeCores: 2
+  kpNodeMemory: 2048
   sshKey: null
 
 replicaCount: 1

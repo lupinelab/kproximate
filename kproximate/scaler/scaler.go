@@ -30,10 +30,10 @@ func init() {
 }
 
 type KProximateScaler struct {
-	config      Config
-	kCluster    kubernetes.Kubernetes
-	pCluster    kproxmox.Proxmox
-	scaleState  int32
+	config     Config
+	kCluster   kubernetes.Kubernetes
+	pCluster   kproxmox.Proxmox
+	scaleState int32
 }
 
 type scaleEvent struct {
@@ -44,7 +44,7 @@ type scaleEvent struct {
 
 func NewScaler(config Config) *KProximateScaler {
 	kClient := kubernetes.NewKubernetesClient()
-	pClient := kproxmox.NewProxmoxClient(config.PmUrl, config.AllowInsecure, config.PmUserID, config.PmToken)
+	pClient := kproxmox.NewProxmoxClient(config.PmUrl, config.AllowInsecure, config.PmUserID, config.PmToken, config.PmDebug)
 
 	kpNodeTemplateRef, err := pClient.Client.GetVmRefByName(config.KpNodeTemplateName)
 	if err != nil {
@@ -59,20 +59,20 @@ func NewScaler(config Config) *KProximateScaler {
 	}
 
 	config.kpNodeParams = map[string]interface{}{
-		"agent":	 "enabled=1",
+		"agent":     "enabled=1",
 		"balloon":   0,
-		"cores":     config.KPNodeCores,
+		"cores":     config.KpNodeCores,
 		"ipconfig0": "ip=dhcp",
-		"memory":    config.KPNodeMemory,
-		"onboot": 	 1,
+		"memory":    config.KpNodeMemory,
+		"onboot":    1,
 		"sshkeys":   strings.Replace(url.QueryEscape(config.SshKey), "+", "%20", 1),
 	}
 
 	scaler := &KProximateScaler{
-		config:      config,
-		kCluster:    *kClient,
-		pCluster:    *pClient,
-		scaleState:  0,
+		config:     config,
+		kCluster:   *kClient,
+		pCluster:   *pClient,
+		scaleState: 0,
 	}
 
 	return scaler
@@ -122,7 +122,7 @@ func (scaler *KProximateScaler) scaler() {
 
 				ctx := context.Background()
 
-				go scaler.scale(ctx, scaleEvent)
+				go scaler.scaleUp(ctx, scaleEvent)
 
 				// Kick off the scaling events 1 second apart to allow proxmox some time to start the first
 				// scaleEvent, otherwise it can attempt to duplicate the VMID
@@ -138,7 +138,16 @@ func (scaler *KProximateScaler) scaler() {
 		if atomic.LoadInt32(&scaler.scaleState) == 0 {
 			go scaler.cleanUpStoppedNodes()
 		}
-		// TODO Calculate spare capacity and consider consolidation
+
+		if atomic.LoadInt32(&scaler.scaleState) == 0 {
+			scaleEvent := scaler.considerScaleDown()
+
+			if scaleEvent.scaleType != 0 {
+				ctx := context.Background()
+
+				go scaler.scaleDown(ctx, scaleEvent)
+			}
+		}
 
 		time.Sleep(5 * time.Second)
 	}
@@ -150,13 +159,13 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	var numMemoryNodesRequired int
 
 	if requiredResources.Cpu != 0 {
-		expectedCpu := float64(scaler.config.kpNodeTemplateConfig.Cores) * float64(atomic.LoadInt32(&scaler.scaleState))
+		expectedCpu := float64(scaler.config.KpNodeCores) * float64(atomic.LoadInt32(&scaler.scaleState))
 		unaccountedCpu := requiredResources.Cpu - expectedCpu
 		numCpuNodesRequired = int(math.Ceil(unaccountedCpu / float64(scaler.config.kpNodeTemplateConfig.Cores)))
 	}
 
 	if requiredResources.Memory != 0 {
-		expectedMemory := int64(scaler.config.kpNodeTemplateConfig.Memory<<20) * int64(atomic.LoadInt32(&scaler.scaleState))
+		expectedMemory := int64(scaler.config.KpNodeMemory<<20) * int64(atomic.LoadInt32(&scaler.scaleState))
 		unaccountedMemory := requiredResources.Memory - int64(expectedMemory)
 		numMemoryNodesRequired = int(math.Ceil(float64(unaccountedMemory) / float64(scaler.config.kpNodeTemplateConfig.Memory<<20)))
 	}
@@ -179,7 +188,7 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 		if err != nil {
 			warningLog.Printf("Could not get pods: %s", err.Error())
 		}
-		
+
 		if schedulingFailed == true {
 			newName := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
 			requiredEvent := &scaleEvent{
@@ -234,7 +243,7 @@ selected:
 	return
 }
 
-func (scaler *KProximateScaler) scale(ctx context.Context, scaleEvent *scaleEvent) {
+func (scaler *KProximateScaler) scaleUp(ctx context.Context, scaleEvent *scaleEvent) {
 	atomic.AddInt32(&scaler.scaleState, int32(scaleEvent.scaleType))
 	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
 
@@ -290,6 +299,7 @@ ptimeout:
 	infoLog.Printf("Waiting for %s to join kcluster", scaleEvent.kpNodeName)
 
 	kctx, cancelCtx := context.WithTimeout(ctx, time.Duration(60*time.Second))
+	// Add wait for join variable
 	defer cancelCtx()
 
 	go scaler.kCluster.WaitForJoin(
@@ -328,8 +338,28 @@ ktimeout:
 	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
 }
 
+func (scaler *KProximateScaler) scaleDown(ctx context.Context, scaleEvent *scaleEvent) {
+	atomic.AddInt32(&scaler.scaleState, int32(scaleEvent.scaleType))
+	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
+
+	err := scaler.kCluster.SlowDeleteKpNode(scaleEvent.kpNodeName)
+	if err != nil {
+		warningLog.Printf("Could not delete kNode %v, scale down failed: %s", scaleEvent.kpNodeName, err.Error())
+	}
+
+	err = scaler.pCluster.DeleteKpNode(scaleEvent.kpNodeName)
+	if err != nil {
+		warningLog.Printf("Could not delete pNode %v, scale down failed: %s", scaleEvent.kpNodeName, err.Error())
+	}
+
+	infoLog.Printf("Deleted %s", scaleEvent.kpNodeName)
+
+	atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
+	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
+}
+
 func (scaler *KProximateScaler) numKpNodes() int {
-	kpNodes:= scaler.pCluster.GetRunningKpNodes()
+	kpNodes := scaler.pCluster.GetRunningKpNodes()
 
 	return len(kpNodes) + int(atomic.LoadInt32(&scaler.scaleState))
 }
@@ -383,5 +413,85 @@ func (scaler *KProximateScaler) cleanUpStoppedNodes() {
 		}
 
 		infoLog.Printf("Deleted stopped node %s", stoppedNode.Name)
+	}
+}
+
+func (scaler *KProximateScaler) considerScaleDown() *scaleEvent {
+	allocatedResources, err := scaler.kCluster.GetKpNodesAllocatedResources()
+	if err != nil {
+		warningLog.Printf("Consider scale down failed, unable to get allocated resources: %s", err.Error())
+		return &scaleEvent{}
+	}
+
+	numKpNodes := scaler.numKpNodes()
+
+	totalCpuAllocatable := scaler.config.KpNodeCores * numKpNodes
+	totalMemoryAllocatable := scaler.config.KpNodeMemory << 20 * numKpNodes
+
+	var totalCpuAllocated float64
+	for _, kpNode := range allocatedResources {
+		totalCpuAllocated += kpNode.Cpu
+	}
+
+	var totalMemoryAllocated float64
+	for _, kpNode := range allocatedResources {
+		totalMemoryAllocated += kpNode.Memory
+	}
+
+	kpNodeHeadroom := scaler.config.KpNodeHeadroom
+	if kpNodeHeadroom < 0.2 {
+		kpNodeHeadroom = 0.2
+	}
+	numKpNodesAfterScaleDown := numKpNodes - 1
+	acceptableLoadForScaleDown :=
+		(float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
+			kpNodeHeadroom
+
+	scaleEvent := scaleEvent{}
+
+	if totalCpuAllocated != 0 {
+		if totalCpuAllocated/float64(totalCpuAllocatable) <= acceptableLoadForScaleDown {
+			scaleEvent.scaleType = -1
+		}
+	}
+
+	if totalMemoryAllocated != 0 {
+		if totalMemoryAllocated/float64(totalMemoryAllocatable) <= acceptableLoadForScaleDown {
+			scaleEvent.scaleType = -1
+		}
+	}
+
+	scaler.SelectScaleDownTarget(&scaleEvent, allocatedResources)
+
+	return &scaleEvent
+}
+
+func (scaler *KProximateScaler) SelectScaleDownTarget(scaleEvent *scaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
+	kpNodes, err := scaler.kCluster.GetKpNodes()
+	if err != nil {
+		warningLog.Printf("Consider scale down failed, unable get kp-nodes: %s", err.Error())
+	}
+
+	if scaleEvent.scaleType != 0 {
+		var targetNode string
+		kpNodeLoads := make(map[string]float64)
+
+		// Calculate the combined load on each kpNode
+		for _, kpNode := range kpNodes {
+			kpNodeLoads[kpNode.Name] =
+				(allocatedResources[kpNode.Name].Cpu / float64(scaler.config.KpNodeCores)) +
+					(allocatedResources[kpNode.Name].Memory / float64(scaler.config.KpNodeMemory))
+		}
+
+		// Choose the kpnode with the lowest combined load
+		i := 0
+		for kpNode := range kpNodeLoads {
+			if i == 0 || kpNodeLoads[kpNode] < kpNodeLoads[targetNode] {
+				targetNode = kpNode
+				i++
+			}
+		}
+
+		scaleEvent.kpNodeName = targetNode
 	}
 }
