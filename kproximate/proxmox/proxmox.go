@@ -113,17 +113,17 @@ func (p *Proxmox) GetRunningKpNodes() []VmInformation {
 	return kpNodes
 }
 
-func (p *Proxmox) GetAllKpNodes() []VmInformation {
+func (p *Proxmox) GetAllKpNodes() ([]VmInformation, error) {
 	vmlist, err := p.Client.GetVmList()
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
 	var kpnodes vmList
 
 	err = mapstructure.Decode(vmlist, &kpnodes)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
 	var kpNodes []VmInformation
@@ -136,19 +136,22 @@ func (p *Proxmox) GetAllKpNodes() []VmInformation {
 		}
 	}
 
-	return kpNodes
+	return kpNodes, err
 }
 
-func (p *Proxmox) GetKpNode(kpNodeName string) VmInformation {
-	kpNodes := p.GetAllKpNodes()
+func (p *Proxmox) GetKpNode(kpNodeName string) (VmInformation, error) {
+	kpNodes, err := p.GetAllKpNodes()
+	if err != nil {
+		return VmInformation{}, err
+	}
 
 	for _, vm := range kpNodes {
 		if strings.Contains(vm.Name, kpNodeName) {
-			return vm
+			return vm, err
 		}
 	}
 
-	return VmInformation{}
+	return VmInformation{}, err
 }
 
 func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfig, error) {
@@ -212,7 +215,10 @@ func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- 
 }
 
 func (p *Proxmox) DeleteKpNode(kpNodeName string) error {
-	kpNode := p.GetKpNode(kpNodeName)
+	kpNode, err := p.GetKpNode(kpNodeName)
+	if err != nil {
+		return err
+	}
 
 	vmRef, err := p.Client.GetVmRefByName(kpNode.Name)
 	if err != nil {

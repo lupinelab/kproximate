@@ -1,4 +1,4 @@
-package scaler
+package config
 
 import (
 	"context"
@@ -24,6 +24,10 @@ type Config struct {
 	PmUrl                          string `env:"pmUrl"`
 	PmUserID                       string `env:"pmUserID"`
 	PollInterval                   int    `env:"pollInterval"`
+	RabbitMQHost                   string `env:"rabbitMQHost"`
+	RabbitMQPassword               string `env:"rabbitMQPassword"`
+	RabbitMQPort                   string `env:"rabbitMQPort"`
+	RabbitMQUser                   string `env:"rabbitMQUser"`
 	SshKey                         string `env:"sshKey"`
 }
 

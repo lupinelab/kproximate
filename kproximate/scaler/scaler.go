@@ -8,13 +8,12 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync/atomic"
 	"time"
 
+	"github.com/lupinelab/kproximate/config"
 	"github.com/lupinelab/kproximate/kubernetes"
 	kproxmox "github.com/lupinelab/kproximate/proxmox"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/client-go/tools/leaderelection"
 )
 
 var (
@@ -24,25 +23,28 @@ var (
 )
 
 func init() {
-	infoLog = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime)
-	warningLog = log.New(os.Stdout, "WARNING: ", log.Ldate|log.Ltime)
-	errorLog = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime)
+	workerName, err := os.Hostname()
+	if err != nil {
+		log.Panicf("Could not get worker name: %s", err)
+	}
+	infoLog = log.New(os.Stdout, fmt.Sprintf("%s INFO: ", workerName), log.Ldate|log.Ltime)
+	warningLog = log.New(os.Stdout, fmt.Sprintf("%s WARNING: ", workerName), log.Ldate|log.Ltime)
+	errorLog = log.New(os.Stdout, fmt.Sprintf("%s ERROR: ", workerName), log.Ldate|log.Ltime)
 }
 
 type KProximateScaler struct {
-	config     Config
-	kCluster   kubernetes.Kubernetes
-	pCluster   kproxmox.Proxmox
-	scaleState int32
+	Config     config.Config
+	KCluster   kubernetes.Kubernetes
+	PCluster   kproxmox.Proxmox
 }
 
-type scaleEvent struct {
-	scaleType   int
-	kpNodeName  string
-	targetPHost kproxmox.PHostInformation
+type ScaleEvent struct {
+	ScaleType   int
+	KpNodeName  string
+	TargetPHost kproxmox.PHostInformation
 }
 
-func NewScaler(config Config) *KProximateScaler {
+func NewScaler(config *config.Config) *KProximateScaler {
 	kClient := kubernetes.NewKubernetesClient()
 	pClient := kproxmox.NewProxmoxClient(config.PmUrl, config.PmAllowInsecure, config.PmUserID, config.PmToken, config.PmDebug)
 
@@ -69,108 +71,89 @@ func NewScaler(config Config) *KProximateScaler {
 	}
 
 	scaler := &KProximateScaler{
-		config:     config,
-		kCluster:   *kClient,
-		pCluster:   *pClient,
-		scaleState: 0,
+		Config:     *config,
+		KCluster:   *kClient,
+		PCluster:   *pClient,
 	}
 
 	return scaler
 }
 
-func (scaler *KProximateScaler) Start() {
-	podName := os.Getenv("HOSTNAME")
-
-	nameSpace := os.Getenv("NAMESPACE")
-
-	lock := scaler.kCluster.GetNewLock(podName, nameSpace)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
-		Lock:            lock,
-		ReleaseOnCancel: true,
-		LeaseDuration:   10 * time.Second,
-		RenewDeadline:   5 * time.Second,
-		RetryPeriod:     2 * time.Second,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(ctx context.Context) {
-				infoLog.Printf("%v elected leader", podName)
-				scaler.scaler()
-			},
-			OnStoppedLeading: func() {
-				infoLog.Printf("%v stopped leading", podName)
-			},
-		},
-	})
-}
-
-func (scaler *KProximateScaler) scaler() {
-	for {
-		unschedulableResources, err := scaler.kCluster.GetUnschedulableResources()
-		if err != nil {
-			errorLog.Fatalf("Unable to get unschedulable resources: %s", err.Error())
-		}
-
-		requiredScaleEvents := scaler.requiredScaleEvents(unschedulableResources)
-
-		if scaler.numKpNodes() < scaler.config.MaxKpNodes {
-			scaler.selectTargetPHosts(requiredScaleEvents)
-
-			for _, scaleEvent := range requiredScaleEvents {
-
-				ctx := context.Background()
-
-				go scaler.scaleUp(ctx, scaleEvent)
-
-				// Kick off the scaling events 1 second apart to allow proxmox some time to start the first
-				// scaleEvent, otherwise it can attempt to duplicate the VMID
-				time.Sleep(time.Second)
-			}
-
-		} else if len(requiredScaleEvents) > 0 {
-			warningLog.Printf("Scale requested but already at max kp-nodes: %v", scaler.config.MaxKpNodes)
-		}
-
-		go scaler.cleanUpEmptyNodes()
-
-		if atomic.LoadInt32(&scaler.scaleState) == 0 {
-			go scaler.cleanUpStoppedNodes()
-		}
-
-		go scaler.removeUnbackedNodes()
-		// TODO cleanup orphaned VMs
-
-		if atomic.LoadInt32(&scaler.scaleState) == 0 {
-			scaleEvent := scaler.considerScaleDown()
-
-			if scaleEvent.scaleType != 0 {
-				ctx := context.Background()
-
-				go scaler.scaleDown(ctx, scaleEvent)
-			}
-		}
-
-		time.Sleep(time.Duration(scaler.config.PollInterval) * time.Second)
+func (scaler *KProximateScaler) GetCurrentScalingEvents() int {
+	pNodes, err := scaler.PCluster.GetAllKpNodes()
+	if err != nil {
+		errorLog.Printf("Could not get pNodes: %s", err.Error())
 	}
+	
+	kNodes, err := scaler.KCluster.GetKpNodes()
+	if err != nil {
+		errorLog.Printf("Could not get kNodes: %s", err.Error())
+	}
+
+	events := 0
+match:
+	for _, pNode := range pNodes {
+		for _, kNode := range kNodes {
+			if pNode.Name == kNode.Name {
+				continue match
+			}
+		}
+		events++
+	}
+
+	return events
 }
 
-func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources) []*scaleEvent {
-	requiredScaleEvents := []*scaleEvent{}
+func (scaler *KProximateScaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
+	unschedulableResources, err := scaler.KCluster.GetUnschedulableResources()
+	if err != nil {
+		errorLog.Fatalf("Unable to get unschedulable resources: %s", err.Error())
+	}
+	
+	allKpNodes, err := scaler.PCluster.GetAllKpNodes()
+	if err != nil {
+		errorLog.Fatalf("Unable to get kp-nodes: %s", err.Error())
+	}
+
+	requiredScaleEvents := scaler.requiredScaleEvents(unschedulableResources, len(allKpNodes), queuedEvents)
+
+	return requiredScaleEvents
+
+	// go scaler.cleanUpEmptyNodes()
+
+	// if atomic.LoadInt32(&scaler.ScaleState) == 0 {
+	// 	go scaler.cleanUpStoppedNodes()
+	// }
+
+	// go scaler.removeUnbackedNodes()
+	// // TODO cleanup orphaned VMs
+
+	// if atomic.LoadInt32(&scaler.ScaleState) == 0 {
+	// 	scaleEvent := scaler.considerScaleDown()
+
+	// 	if scaleEvent.scaleType != 0 {
+	// 		ctx := context.Background()
+
+	// 		go scaler.scaleDown(ctx, scaleEvent)
+	// 	}
+	// }
+}
+
+func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources, numKpNodes int, queuedEvents *int) []*ScaleEvent {
+	requiredScaleEvents := []*ScaleEvent{}
 	var numCpuNodesRequired int
 	var numMemoryNodesRequired int
 
 	if requiredResources.Cpu != 0 {
-		expectedCpu := float64(scaler.config.KpNodeCores) * float64(atomic.LoadInt32(&scaler.scaleState))
+		expectedCpu := float64(scaler.Config.KpNodeCores) * float64(numKpNodes + *queuedEvents)
 		unaccountedCpu := requiredResources.Cpu - expectedCpu
-		numCpuNodesRequired = int(math.Ceil(unaccountedCpu / float64(scaler.config.KpNodeTemplateConfig.Cores)))
+		numCpuNodesRequired = int(math.Ceil(unaccountedCpu / float64(scaler.Config.KpNodeTemplateConfig.Cores)))
 	}
 
 	if requiredResources.Memory != 0 {
-		expectedMemory := int64(scaler.config.KpNodeMemory<<20) * int64(atomic.LoadInt32(&scaler.scaleState))
+		expectedMemory := int64(scaler.Config.KpNodeMemory<<20) * int64(numKpNodes + *queuedEvents)
 		unaccountedMemory := requiredResources.Memory - int64(expectedMemory)
-		numMemoryNodesRequired = int(math.Ceil(float64(unaccountedMemory) / float64(scaler.config.KpNodeTemplateConfig.Memory<<20)))
+		numMemoryNodesRequired = int(math.Ceil(float64(unaccountedMemory) / float64(scaler.Config.KpNodeTemplateConfig.Memory<<20)))
 	}
 
 	numNodesRequired := int(math.Max(float64(numCpuNodesRequired), float64(numMemoryNodesRequired)))
@@ -178,25 +161,25 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	for kpNode := 1; kpNode <= numNodesRequired; kpNode++ {
 		newName := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
 
-		requiredEvent := &scaleEvent{
-			scaleType:  1,
-			kpNodeName: newName,
+		requiredEvent := &ScaleEvent{
+			ScaleType:  1,
+			KpNodeName: newName,
 		}
 
 		requiredScaleEvents = append(requiredScaleEvents, requiredEvent)
 	}
 
-	if len(requiredScaleEvents) == 0 && atomic.LoadInt32(&scaler.scaleState) == 0 {
-		schedulingFailed, err := scaler.kCluster.GetFailedSchedulingDueToControlPlaneTaint()
+	if len(requiredScaleEvents) == 0 && *queuedEvents == 0 {
+		schedulingFailed, err := scaler.KCluster.GetFailedSchedulingDueToControlPlaneTaint()
 		if err != nil {
 			warningLog.Printf("Could not get pods: %s", err.Error())
 		}
 
 		if schedulingFailed == true {
 			newName := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
-			requiredEvent := &scaleEvent{
-				scaleType:  1,
-				kpNodeName: newName,
+			requiredEvent := &ScaleEvent{
+				ScaleType:  1,
+				KpNodeName: newName,
 			}
 
 			requiredScaleEvents = append(requiredScaleEvents, requiredEvent)
@@ -206,9 +189,9 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	return requiredScaleEvents
 }
 
-func (scaler *KProximateScaler) selectTargetPHosts(scaleEvents []*scaleEvent) {
-	pHosts := scaler.pCluster.GetClusterStats()
-	kpNodes := scaler.pCluster.GetRunningKpNodes()
+func (scaler *KProximateScaler) selectTargetPHosts(scaleEvents []*ScaleEvent) {
+	pHosts := scaler.PCluster.GetClusterStats()
+	kpNodes := scaler.PCluster.GetRunningKpNodes()
 
 selected:
 	for _, scaleEvent := range scaleEvents {
@@ -216,7 +199,7 @@ selected:
 		for _, pHost := range pHosts {
 			// Check for a scaleEvent targeting the pHost
 			for _, scaleEvent := range scaleEvents {
-				if scaleEvent.targetPHost.Id == pHost.Id {
+				if scaleEvent.TargetPHost.Id == pHost.Id {
 					continue skipHost
 				}
 			}
@@ -228,7 +211,7 @@ selected:
 				}
 			}
 
-			scaleEvent.targetPHost = pHost
+			scaleEvent.TargetPHost = pHost
 			continue selected
 		}
 		// Else select a node with the most available memory
@@ -240,17 +223,14 @@ selected:
 			}
 		}
 
-		scaleEvent.targetPHost = maxAvailMemNode
+		scaleEvent.TargetPHost = maxAvailMemNode
 	}
 
 	return
 }
 
-func (scaler *KProximateScaler) scaleUp(ctx context.Context, scaleEvent *scaleEvent) {
-	atomic.AddInt32(&scaler.scaleState, int32(scaleEvent.scaleType))
-	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
-
-	infoLog.Printf("Provisioning %s on pcluster", scaleEvent.kpNodeName)
+func (scaler *KProximateScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) {
+	infoLog.Printf("Provisioning %s on pcluster", scaleEvent.KpNodeName)
 
 	ok := make(chan bool)
 
@@ -259,14 +239,14 @@ func (scaler *KProximateScaler) scaleUp(ctx context.Context, scaleEvent *scaleEv
 	pctx, cancelCtx := context.WithTimeout(ctx, time.Duration(20*time.Second))
 	defer cancelCtx()
 
-	go scaler.pCluster.NewKpNode(
+	go scaler.PCluster.NewKpNode(
 		pctx,
 		ok,
 		errchan,
-		scaler.config.KpNodeTemplateRef,
-		scaleEvent.kpNodeName,
-		scaleEvent.targetPHost.Node,
-		scaler.config.KpNodeParams,
+		scaler.Config.KpNodeTemplateRef,
+		scaleEvent.KpNodeName,
+		scaleEvent.TargetPHost.Node,
+		scaler.Config.KpNodeParams,
 	)
 
 ptimeout:
@@ -274,60 +254,51 @@ ptimeout:
 	case <-pctx.Done():
 		cancelCtx()
 
-		errorLog.Printf("Timed out waiting for %s to start", scaleEvent.kpNodeName)
+		errorLog.Printf("Timed out waiting for %s to start", scaleEvent.KpNodeName)
 
-		atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
-		infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
-
-		err := scaler.deleteKpNode(scaleEvent.kpNodeName)
+		err := scaler.deleteKpNode(scaleEvent.KpNodeName)
 		if err != nil {
-			errorLog.Printf("Cleanup failed for %s: %s", scaleEvent.kpNodeName, err.Error())
+			errorLog.Printf("Cleanup failed for %s: %s", scaleEvent.KpNodeName, err.Error())
 		}
 
 		return
 
 	case err := <-errchan:
-		errorLog.Printf("Could not provision %s: %s", scaleEvent.kpNodeName, err.Error())
-
-		atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
-		infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
+		errorLog.Printf("Could not provision %s: %s", scaleEvent.KpNodeName, err.Error())
 
 		return
 
 	case <-ok:
-		infoLog.Printf("Started %s", scaleEvent.kpNodeName)
+		infoLog.Printf("Started %s", scaleEvent.KpNodeName)
 		break ptimeout
 	}
 
-	infoLog.Printf("Waiting for %s to join kcluster", scaleEvent.kpNodeName)
+	infoLog.Printf("Waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
 	kctx, cancelCtx := context.WithTimeout(ctx, time.Duration(60*time.Second))
 	// Add wait for join variable
 	defer cancelCtx()
 
-	go scaler.kCluster.WaitForJoin(
+	go scaler.KCluster.WaitForJoin(
 		kctx,
 		ok,
-		scaleEvent.kpNodeName,
+		scaleEvent.KpNodeName,
 	)
 
 ktimeout:
 	select {
 	case <-kctx.Done():
 		cancelCtx()
-		errorLog.Printf("Timed out waiting for %s to join kcluster", scaleEvent.kpNodeName)
+		errorLog.Printf("Timed out waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
-		atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
-		infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
+		infoLog.Printf("Cleaning up failed scale attempt: %s", scaleEvent.KpNodeName)
 
-		infoLog.Printf("Cleaning up failed scale attempt: %s", scaleEvent.kpNodeName)
-
-		err := scaler.deleteKpNode(scaleEvent.kpNodeName)
+		err := scaler.deleteKpNode(scaleEvent.KpNodeName)
 		if err != nil {
-			errorLog.Printf("Cleanup failed for %s: %s", scaleEvent.kpNodeName, err.Error())
+			errorLog.Printf("Cleanup failed for %s: %s", scaleEvent.KpNodeName, err.Error())
 		}
 
-		infoLog.Printf("Deleted %s", scaleEvent.kpNodeName)
+		infoLog.Printf("Deleted %s", scaleEvent.KpNodeName)
 
 		return
 
@@ -335,61 +306,55 @@ ktimeout:
 		break ktimeout
 	}
 
-	infoLog.Printf("%s joined kcluster", scaleEvent.kpNodeName)
-
-	atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
-	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
+	infoLog.Printf("%s joined kcluster", scaleEvent.KpNodeName)
 }
 
-func (scaler *KProximateScaler) scaleDown(ctx context.Context, scaleEvent *scaleEvent) {
-	atomic.AddInt32(&scaler.scaleState, int32(scaleEvent.scaleType))
-	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
-
-	err := scaler.kCluster.SlowDeleteKpNode(scaleEvent.kpNodeName)
+func (scaler *KProximateScaler) scaleDown(ctx context.Context, scaleEvent *ScaleEvent) {
+	err := scaler.KCluster.SlowDeleteKpNode(scaleEvent.KpNodeName)
 	if err != nil {
-		warningLog.Printf("Could not delete kNode %v, scale down failed: %s", scaleEvent.kpNodeName, err.Error())
+		warningLog.Printf("Could not delete kNode %v, scale down failed: %s", scaleEvent.KpNodeName, err.Error())
 	}
 
-	err = scaler.pCluster.DeleteKpNode(scaleEvent.kpNodeName)
+	err = scaler.PCluster.DeleteKpNode(scaleEvent.KpNodeName)
 	if err != nil {
-		warningLog.Printf("Could not delete pNode %v, scale down failed: %s", scaleEvent.kpNodeName, err.Error())
+		warningLog.Printf("Could not delete pNode %v, scale down failed: %s", scaleEvent.KpNodeName, err.Error())
 	}
 
-	infoLog.Printf("Deleted %s", scaleEvent.kpNodeName)
-
-	atomic.AddInt32(&scaler.scaleState, -int32(scaleEvent.scaleType))
-	infoLog.Printf("Scale state: %+d", atomic.LoadInt32(&scaler.scaleState))
+	infoLog.Printf("Deleted %s", scaleEvent.KpNodeName)
 }
 
-func (scaler *KProximateScaler) numKpNodes() int {
-	kpNodes := scaler.pCluster.GetRunningKpNodes()
+func (scaler *KProximateScaler) NumKpNodes() int {
+	kpNodes := scaler.PCluster.GetRunningKpNodes()
 
-	return len(kpNodes) + int(atomic.LoadInt32(&scaler.scaleState))
+	return len(kpNodes)
 }
 
 func (scaler *KProximateScaler) deleteKpNode(kpNodeName string) error {
-	_ = scaler.kCluster.DeleteKpNode(kpNodeName)
+	_ = scaler.KCluster.DeleteKpNode(kpNodeName)
 
-	err := scaler.pCluster.DeleteKpNode(kpNodeName)
+	err := scaler.PCluster.DeleteKpNode(kpNodeName)
 
 	return err
 }
 
 func (scaler *KProximateScaler) cleanUpEmptyNodes() {
-	emptyKpNodes, err := scaler.kCluster.GetEmptyKpNodes()
+	emptyKpNodes, err := scaler.KCluster.GetEmptyKpNodes()
 	if err != nil {
 		errorLog.Printf("Could not get emtpy nodes: %s", err.Error())
 	}
 
 	for _, emptyNode := range emptyKpNodes {
-		emptyPNode := scaler.pCluster.GetKpNode(emptyNode.Name)
+		emptyPNode, err := scaler.PCluster.GetKpNode(emptyNode.Name)
+		if err != nil {
+			errorLog.Printf("Could not get emtpy node: %s", err.Error())
+		}
 
 		// Allow new nodes a grace period of emptiness after creation before they are targets for cleanup
-		if emptyPNode.Uptime < scaler.config.EmptyGraceSecondsAfterCreation {
+		if emptyPNode.Uptime < scaler.Config.EmptyGraceSecondsAfterCreation {
 			continue
 		}
 
-		err := scaler.deleteKpNode(emptyNode.Name)
+		err = scaler.deleteKpNode(emptyNode.Name)
 		if err != nil {
 			warningLog.Printf("Failed to delete empty node %s: %s", emptyNode.Name, err.Error())
 		}
@@ -400,7 +365,11 @@ func (scaler *KProximateScaler) cleanUpEmptyNodes() {
 }
 
 func (scaler *KProximateScaler) cleanUpStoppedNodes() {
-	kpNodes := scaler.pCluster.GetAllKpNodes()
+	kpNodes, err := scaler.PCluster.GetAllKpNodes()
+	if err != nil {
+		errorLog.Printf("Could not get pNodes: %s", err.Error())
+	}
+
 	var stoppedNodes []kproxmox.VmInformation
 	for _, kpNode := range kpNodes {
 		if kpNode.Status == "stopped" {
@@ -409,7 +378,7 @@ func (scaler *KProximateScaler) cleanUpStoppedNodes() {
 	}
 
 	for _, stoppedNode := range stoppedNodes {
-		err := scaler.pCluster.DeleteKpNode(stoppedNode.Name)
+		err := scaler.PCluster.DeleteKpNode(stoppedNode.Name)
 		if err != nil {
 			warningLog.Printf("Failed to delete stopped node %s: %s", stoppedNode.Name, err.Error())
 			continue
@@ -419,102 +388,106 @@ func (scaler *KProximateScaler) cleanUpStoppedNodes() {
 	}
 }
 
-func (scaler *KProximateScaler) considerScaleDown() *scaleEvent {
-	allocatedResources, err := scaler.kCluster.GetKpNodesAllocatedResources()
-	if err != nil {
-		warningLog.Printf("Consider scale down failed, unable to get allocated resources: %s", err.Error())
-		return &scaleEvent{}
-	}
+// func (scaler *KProximateScaler) considerScaleDown() *ScaleEvent {
+// 	allocatedResources, err := scaler.KCluster.GetKpNodesAllocatedResources()
+// 	if err != nil {
+// 		warningLog.Printf("Consider scale down failed, unable to get allocated resources: %s", err.Error())
+// 		return &ScaleEvent{}
+// 	}
 
-	numKpNodes := scaler.numKpNodes()
+// 	numKpNodes := scaler.numKpNodes()
 
-	totalCpuAllocatable := scaler.config.KpNodeCores * numKpNodes
-	totalMemoryAllocatable := scaler.config.KpNodeMemory << 20 * numKpNodes
+// 	totalCpuAllocatable := scaler.Config.KpNodeCores * numKpNodes
+// 	totalMemoryAllocatable := scaler.Config.KpNodeMemory << 20 * numKpNodes
 
-	var totalCpuAllocated float64
-	for _, kpNode := range allocatedResources {
-		totalCpuAllocated += kpNode.Cpu
-	}
+// 	var totalCpuAllocated float64
+// 	for _, kpNode := range allocatedResources {
+// 		totalCpuAllocated += kpNode.Cpu
+// 	}
 
-	var totalMemoryAllocated float64
-	for _, kpNode := range allocatedResources {
-		totalMemoryAllocated += kpNode.Memory
-	}
+// 	var totalMemoryAllocated float64
+// 	for _, kpNode := range allocatedResources {
+// 		totalMemoryAllocated += kpNode.Memory
+// 	}
 
-	kpNodeHeadroom := scaler.config.KpNodeHeadroom
-	if kpNodeHeadroom < 0.2 {
-		kpNodeHeadroom = 0.2
-	}
-	numKpNodesAfterScaleDown := numKpNodes - 1
-	acceptableLoadForScaleDown :=
-		(float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
-			kpNodeHeadroom
+// 	kpNodeHeadroom := scaler.Config.KpNodeHeadroom
+// 	if kpNodeHeadroom < 0.2 {
+// 		kpNodeHeadroom = 0.2
+// 	}
+// 	numKpNodesAfterScaleDown := numKpNodes - 1
+// 	acceptableLoadForScaleDown :=
+// 		(float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
+// 			kpNodeHeadroom
 
-	scaleEvent := scaleEvent{}
+// 	scaleEvent := ScaleEvent{}
 
-	if totalCpuAllocated != 0 {
-		if totalCpuAllocated/float64(totalCpuAllocatable) <= acceptableLoadForScaleDown {
-			scaleEvent.scaleType = -1
-		}
-	}
+// 	if totalCpuAllocated != 0 {
+// 		if totalCpuAllocated/float64(totalCpuAllocatable) <= acceptableLoadForScaleDown {
+// 			scaleEvent.ScaleType = -1
+// 		}
+// 	}
 
-	if totalMemoryAllocated != 0 {
-		if totalMemoryAllocated/float64(totalMemoryAllocatable) <= acceptableLoadForScaleDown {
-			scaleEvent.scaleType = -1
-		}
-	}
+// 	if totalMemoryAllocated != 0 {
+// 		if totalMemoryAllocated/float64(totalMemoryAllocatable) <= acceptableLoadForScaleDown {
+// 			scaleEvent.ScaleType = -1
+// 		}
+// 	}
 
-	scaler.selectScaleDownTarget(&scaleEvent, allocatedResources)
+// 	scaler.selectScaleDownTarget(&scaleEvent, allocatedResources)
 
-	return &scaleEvent
-}
+// 	return &scaleEvent
+// }
 
-func (scaler *KProximateScaler) selectScaleDownTarget(scaleEvent *scaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
-	kpNodes, err := scaler.kCluster.GetKpNodes()
-	if err != nil {
-		warningLog.Printf("Consider scale down failed, unable get kp-nodes: %s", err.Error())
-	}
+// func (scaler *KProximateScaler) selectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
+// 	kpNodes, err := scaler.KCluster.GetKpNodes()
+// 	if err != nil {
+// 		warningLog.Printf("Consider scale down failed, unable get kp-nodes: %s", err.Error())
+// 	}
 
-	if scaleEvent.scaleType != 0 {
-		var targetNode string
-		kpNodeLoads := make(map[string]float64)
+// 	if scaleEvent.ScaleType != 0 {
+// 		var targetNode string
+// 		kpNodeLoads := make(map[string]float64)
 
-		// Calculate the combined load on each kpNode
-		for _, kpNode := range kpNodes {
-			kpNodeLoads[kpNode.Name] =
-				(allocatedResources[kpNode.Name].Cpu / float64(scaler.config.KpNodeCores)) +
-					(allocatedResources[kpNode.Name].Memory / float64(scaler.config.KpNodeMemory))
-		}
+// 		// Calculate the combined load on each kpNode
+// 		for _, kpNode := range kpNodes {
+// 			kpNodeLoads[kpNode.Name] =
+// 				(allocatedResources[kpNode.Name].Cpu / float64(scaler.Config.KpNodeCores)) +
+// 					(allocatedResources[kpNode.Name].Memory / float64(scaler.Config.KpNodeMemory))
+// 		}
 
-		// Choose the kpnode with the lowest combined load
-		i := 0
-		for kpNode := range kpNodeLoads {
-			if i == 0 || kpNodeLoads[kpNode] < kpNodeLoads[targetNode] {
-				targetNode = kpNode
-				i++
-			}
-		}
+// 		// Choose the kpnode with the lowest combined load
+// 		i := 0
+// 		for kpNode := range kpNodeLoads {
+// 			if i == 0 || kpNodeLoads[kpNode] < kpNodeLoads[targetNode] {
+// 				targetNode = kpNode
+// 				i++
+// 			}
+// 		}
 
-		scaleEvent.kpNodeName = targetNode
-	}
-}
+// 		scaleEvent.KpNodeName = targetNode
+// 	}
+// }
 
-func (scaler *KProximateScaler) removeUnbackedNodes() {
-	kNodes, err := scaler.kCluster.GetKpNodes()
-	if err != nil {
-		errorLog.Printf("Cleanup failed, could not get kNodes: %s", err.Error())
-	}
+// func (scaler *KProximateScaler) removeUnbackedNodes() {
+// 	kNodes, err := scaler.KCluster.GetKpNodes()
+// 	if err != nil {
+// 		errorLog.Printf("Cleanup failed, could not get kNodes: %s", err.Error())
+// 	}
 
-	for _, kNode := range kNodes {
-		pNode := scaler.pCluster.GetKpNode(kNode.Name)
-		if pNode.Name == kNode.Name {
-			continue
-		} else {
-			err := scaler.kCluster.DeleteKpNode(kNode.Name)
-			if err != nil {
-				warningLog.Printf("Could not delete %s: %s", kNode.Name, err.Error())
-			}
-			infoLog.Printf("Deleted unbacked node %s", kNode.Name)
-		}
-	}
-}
+// 	for _, kNode := range kNodes {
+// 		pNode, err := scaler.PCluster.GetKpNode(kNode.Name)
+// 		if err != nil {
+// 			errorLog.Printf("Could not get pNode: %s", err.Error())
+// 		}
+
+// 		if pNode.Name == kNode.Name {
+// 			continue
+// 		} else {
+// 			err := scaler.KCluster.DeleteKpNode(kNode.Name)
+// 			if err != nil {
+// 				warningLog.Printf("Could not delete %s: %s", kNode.Name, err.Error())
+// 			}
+// 			infoLog.Printf("Deleted unbacked node %s", kNode.Name)
+// 		}
+// 	}
+// }
