@@ -3,20 +3,21 @@
 # Declare variables to be passed into your templates.
 
 kproximate:
+  emptyGraceSecondsAfterCreation: 120
+  kpNodeCores: 2
+  kpNodeHeadroom: 0.2
+  kpNodeMemory: 2048
+  kpNodeTemplateName: null
+  maxKPNodes: 3
+  pmAllowInsecure: false
   pmDebug: false
   pmUrl: null
-  pmToken: null
   pmUserID: null
-  allowInsecure: false
-  emptyGraceSecondsAfterCreation: 120
-  maxKPNodes: 3
-  kpNodeHeadroom: 0.2
-  kpNodeTemplateName: null
-  kpNodeCores: 2
-  kpNodeMemory: 2048
-  sshKey: null
+  pmToken: null
+  pollInterval: 5
+  sshKey: None
 
-replicaCount: 1
+replicaCount: 3
 
 image:
   pullPolicy: IfNotPresent

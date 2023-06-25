@@ -9,20 +9,21 @@ import (
 )
 
 type Config struct {
-	AllowInsecure                  bool    `env:"allowInsecure"`
 	EmptyGraceSecondsAfterCreation int     `env:"emptyGraceSecondsAfterCreation"`
 	KpNodeCores                    int     `env:"kpNodeCores"`
 	KpNodeHeadroom                 float64 `env:"kpNodeHeadroom"`
 	KpNodeMemory                   int     `env:"kpNodeMemory"`
-	kpNodeParams                   map[string]interface{}
-	kpNodeTemplateConfig           kproxmox.VMConfig
+	KpNodeParams                   map[string]interface{}
+	KpNodeTemplateConfig           kproxmox.VMConfig
 	KpNodeTemplateName             string `env:"kpNodeTemplateName"`
-	kpNodeTemplateRef              proxmox.VmRef
+	KpNodeTemplateRef              proxmox.VmRef
 	MaxKpNodes                     int    `env:"maxKPNodes"`
+	PmAllowInsecure                bool   `env:"pmAllowInsecure"`
 	PmDebug                        bool   `env:"pmDebug"`
 	PmToken                        string `env:"pmToken"`
 	PmUrl                          string `env:"pmUrl"`
 	PmUserID                       string `env:"pmUserID"`
+	PollInterval                   int    `env:"pollInterval"`
 	SshKey                         string `env:"sshKey"`
 }
 

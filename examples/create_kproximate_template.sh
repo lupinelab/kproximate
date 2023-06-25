@@ -1,7 +1,7 @@
 #!/bin/bash
 set -xe
 
-STORAGE= # Set the name of the shared proxmox storage to store the template in
+STORAGE= # Add the name of the shared proxmox storage to store the template in
 K3S_URL= # Add your k3s URL here ie. https://k3s-server:6443
 K3S_TOKEN= # Add your k3s token here, can be found at /var/lib/rancher/k3s/server/node-token on an existing k3s node
 
@@ -43,7 +43,7 @@ virt-customize \
 
 # Build a vm from which to create a proxmox template
 # Ensure you tag your template to the required vlan or remove the tag
-qm create $VMID --name kuproximate-template --memory 2048 --balloon 1024 --cpu cputype=host --cores 2 --net0 virtio,bridge=vmbr0,firewall=1,tag=200 --bios ovmf
+qm create $VMID --name kproximate-template --memory 2048 --balloon 1024 --cpu cputype=host --cores 2 --net0 virtio,bridge=vmbr0,firewall=1 --bios ovmf
 qm set $VMID --efidisk0 $STORAGE:0
 qm importdisk $VMID $NEWDISK $STORAGE
 qm set $VMID --scsihw virtio-scsi-single --scsi0 $STORAGE:vm-$VMID-disk-1,cache=writeback,discard=on,iothread=1,ssd=1

@@ -299,6 +299,8 @@ func (k *Kubernetes) SlowDeleteKpNode(kpNodeName string) error {
 		k.EvictPod(pod.Name, pod.Namespace)
 	}
 
+	// TODO: Wait for the node to be empty or timeout after a minute and kill it.
+
 	err = k.client.CoreV1().Nodes().Delete(
 		context.TODO(),
 		kpNodeName,
