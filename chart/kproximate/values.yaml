@@ -5,10 +5,10 @@
 kproximate:
   emptyGraceSecondsAfterCreation: 120
   kpNodeCores: 2
-  kpNodeHeadroom: 0.2
+  kpLoadHeadroom: 0.2
   kpNodeMemory: 2048
   kpNodeTemplateName: null
-  maxKPNodes: 3
+  maxKpNodes: 3
   pmAllowInsecure: false
   pmDebug: false
   pmUrl: null

@@ -11,13 +11,13 @@ import (
 type Config struct {
 	EmptyGraceSecondsAfterCreation int     `env:"emptyGraceSecondsAfterCreation"`
 	KpNodeCores                    int     `env:"kpNodeCores"`
-	KpNodeHeadroom                 float64 `env:"kpNodeHeadroom"`
+	KpLoadHeadroom                 float64 `env:"kpLoadHeadroom"`
 	KpNodeMemory                   int     `env:"kpNodeMemory"`
 	KpNodeParams                   map[string]interface{}
 	KpNodeTemplateConfig           kproxmox.VMConfig
 	KpNodeTemplateName             string `env:"kpNodeTemplateName"`
 	KpNodeTemplateRef              proxmox.VmRef
-	MaxKpNodes                     int    `env:"maxKPNodes"`
+	MaxKpNodes                     int    `env:"maxKpNodes"`
 	PmAllowInsecure                bool   `env:"pmAllowInsecure"`
 	PmDebug                        bool   `env:"pmDebug"`
 	PmToken                        string `env:"pmToken"`

@@ -112,16 +112,6 @@ func (scaler *KProximateScaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
 
 	// go scaler.removeUnbackedNodes()
 	// // TODO cleanup orphaned VMs
-
-	// if atomic.LoadInt32(&scaler.ScaleState) == 0 {
-	// 	scaleEvent := scaler.considerScaleDown()
-
-	// 	if scaleEvent.scaleType != 0 {
-	// 		ctx := context.Background()
-
-	// 		go scaler.scaleDown(ctx, scaleEvent)
-	// 	}
-	// }
 }
 
 func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources, numKpNodes int, queuedEvents *int) []*ScaleEvent {
@@ -277,22 +267,26 @@ ktimeout:
 	return nil
 }
 
-func (scaler *KProximateScaler) scaleDown(ctx context.Context, scaleEvent *ScaleEvent) {
+func (scaler *KProximateScaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
 	err := scaler.KCluster.SlowDeleteKpNode(scaleEvent.KpNodeName)
 	if err != nil {
-		logger.WarningLog.Printf("Could not delete kNode %v, scale down failed: %s", scaleEvent.KpNodeName, err.Error())
+		return err
 	}
 
 	err = scaler.PCluster.DeleteKpNode(scaleEvent.KpNodeName)
 	if err != nil {
-		logger.WarningLog.Printf("Could not delete pNode %v, scale down failed: %s", scaleEvent.KpNodeName, err.Error())
+		return err
 	}
 
 	logger.InfoLog.Printf("Deleted %s", scaleEvent.KpNodeName)
+	return err
 }
 
 func (scaler *KProximateScaler) NumKpNodes() int {
-	kpNodes := scaler.PCluster.GetRunningKpNodes()
+	kpNodes, err := scaler.KCluster.GetKpNodes()
+	if err != nil {
+		logger.ErrorLog.Fatalf("Failed to get kp nodes: %s", err.Error())
+	}
 
 	return len(kpNodes)
 }
@@ -356,85 +350,98 @@ func (scaler *KProximateScaler) cleanUpStoppedNodes() {
 	}
 }
 
-// func (scaler *KProximateScaler) considerScaleDown() *ScaleEvent {
-// 	allocatedResources, err := scaler.KCluster.GetKpNodesAllocatedResources()
-// 	if err != nil {
-// 		logger.WarningLog.Printf("Consider scale down failed, unable to get allocated resources: %s", err.Error())
-// 		return &ScaleEvent{}
-// 	}
+func (scaler *KProximateScaler) AssessScaleDown() *ScaleEvent {
+	allocatedResources, err := scaler.KCluster.GetKpNodesAllocatedResources()
+	if err != nil {
+		logger.WarningLog.Printf("Consider scale down failed, unable to get allocated resources: %s", err.Error())
+		return &ScaleEvent{}
+	}
 
-// 	numKpNodes := scaler.numKpNodes()
+	numKpNodes := scaler.NumKpNodes()
 
-// 	totalCpuAllocatable := scaler.Config.KpNodeCores * numKpNodes
-// 	totalMemoryAllocatable := scaler.Config.KpNodeMemory << 20 * numKpNodes
+	totalCpuAllocatable := scaler.Config.KpNodeCores * numKpNodes
+	totalMemoryAllocatable := scaler.Config.KpNodeMemory << 20 * numKpNodes
 
-// 	var totalCpuAllocated float64
-// 	for _, kpNode := range allocatedResources {
-// 		totalCpuAllocated += kpNode.Cpu
-// 	}
+	var totalCpuAllocated float64
+	for _, kpNode := range allocatedResources {
+		totalCpuAllocated += kpNode.Cpu
+	}
 
-// 	var totalMemoryAllocated float64
-// 	for _, kpNode := range allocatedResources {
-// 		totalMemoryAllocated += kpNode.Memory
-// 	}
+	var totalMemoryAllocated float64
+	for _, kpNode := range allocatedResources {
+		totalMemoryAllocated += kpNode.Memory
+	}
 
-// 	kpNodeHeadroom := scaler.Config.KpNodeHeadroom
-// 	if kpNodeHeadroom < 0.2 {
-// 		kpNodeHeadroom = 0.2
-// 	}
-// 	numKpNodesAfterScaleDown := numKpNodes - 1
-// 	acceptableLoadForScaleDown :=
-// 		(float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
-// 			kpNodeHeadroom
+	loadHeadroom := scaler.Config.KpLoadHeadroom
+	if loadHeadroom < 0.2 {
+		loadHeadroom = 0.2
+	}
+	numKpNodesAfterScaleDown := numKpNodes - 1
 
-// 	scaleEvent := ScaleEvent{}
+	acceptCpuScaleDown := true
+	acceptMemoryScaleDown := true
 
-// 	if totalCpuAllocated != 0 {
-// 		if totalCpuAllocated/float64(totalCpuAllocatable) <= acceptableLoadForScaleDown {
-// 			scaleEvent.ScaleType = -1
-// 		}
-// 	}
+	if totalCpuAllocated != 0 {
+		totalCpuLoad := totalCpuAllocated / float64(totalCpuAllocatable)
+		acceptableCpuLoadForScaleDown := (float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
+			(totalCpuLoad * loadHeadroom)
+		if totalCpuLoad > acceptableCpuLoadForScaleDown {
+			acceptCpuScaleDown = false
+		}
+	}
 
-// 	if totalMemoryAllocated != 0 {
-// 		if totalMemoryAllocated/float64(totalMemoryAllocatable) <= acceptableLoadForScaleDown {
-// 			scaleEvent.ScaleType = -1
-// 		}
-// 	}
+	if totalMemoryAllocated != 0 {
+		totalMemoryLoad := totalMemoryAllocated / float64(totalMemoryAllocatable)
+		acceptableMemoryLoadForScaleDown := (float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
+			(totalMemoryLoad * loadHeadroom)
+		if totalMemoryLoad > acceptableMemoryLoadForScaleDown {
+			acceptMemoryScaleDown = false
+		}
+	}
 
-// 	scaler.selectScaleDownTarget(&scaleEvent, allocatedResources)
+	scaleEvent := ScaleEvent{}
 
-// 	return &scaleEvent
-// }
+	if acceptCpuScaleDown && acceptMemoryScaleDown {
+		scaleEvent.ScaleType = -1
+		scaler.selectScaleDownTarget(&scaleEvent, allocatedResources)
+	}
 
-// func (scaler *KProximateScaler) selectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
-// 	kpNodes, err := scaler.KCluster.GetKpNodes()
-// 	if err != nil {
-// 		logger.WarningLog.Printf("Consider scale down failed, unable get kp-nodes: %s", err.Error())
-// 	}
+	if scaleEvent != (ScaleEvent{}) {
+		return &scaleEvent
+	} else {
+		return nil
+	}
+}
 
-// 	if scaleEvent.ScaleType != 0 {
-// 		var targetNode string
-// 		kpNodeLoads := make(map[string]float64)
+func (scaler *KProximateScaler) selectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
+	kpNodes, err := scaler.KCluster.GetKpNodes()
+	if err != nil {
+		logger.WarningLog.Printf("Consider scale down failed, unable get kp-nodes: %s", err.Error())
+	}
 
-// 		// Calculate the combined load on each kpNode
-// 		for _, kpNode := range kpNodes {
-// 			kpNodeLoads[kpNode.Name] =
-// 				(allocatedResources[kpNode.Name].Cpu / float64(scaler.Config.KpNodeCores)) +
-// 					(allocatedResources[kpNode.Name].Memory / float64(scaler.Config.KpNodeMemory))
-// 		}
+	if scaleEvent.ScaleType != 0 {
+		var targetNode string
+		kpNodeLoads := make(map[string]float64)
 
-// 		// Choose the kpnode with the lowest combined load
-// 		i := 0
-// 		for kpNode := range kpNodeLoads {
-// 			if i == 0 || kpNodeLoads[kpNode] < kpNodeLoads[targetNode] {
-// 				targetNode = kpNode
-// 				i++
-// 			}
-// 		}
+		// Calculate the combined load on each kpNode
+		for _, kpNode := range kpNodes {
+			kpNodeLoads[kpNode.Name] =
+				(allocatedResources[kpNode.Name].Cpu / float64(scaler.Config.KpNodeCores)) +
+					(allocatedResources[kpNode.Name].Memory / float64(scaler.Config.KpNodeMemory))
+		}
 
-// 		scaleEvent.KpNodeName = targetNode
-// 	}
-// }
+		// Choose the kpnode with the lowest combined load
+		i := 0
+		for kpNode := range kpNodeLoads {
+			if i == 0 || kpNodeLoads[kpNode] < kpNodeLoads[targetNode] {
+				targetNode = kpNode
+				i++
+			}
+		}
+
+		scaleEvent.KpNodeName = targetNode
+	}
+}
 
 // func (scaler *KProximateScaler) removeUnbackedNodes() {
 // 	kNodes, err := scaler.KCluster.GetKpNodes()

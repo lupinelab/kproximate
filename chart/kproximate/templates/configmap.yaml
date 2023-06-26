@@ -5,10 +5,10 @@ metadata:
 data:
   emptyGraceSecondsAfterCreation: {{ .Values.kproximate.emptyGraceSecondsAfterCreation | quote }}
   kpNodeCores: {{ .Values.kproximate.kpNodeCores | quote }}
-  kpNodeHeadroom: {{ .Values.kproximate.kpNodeHeadroom | quote }}
+  kpLoadHeadroom: {{ .Values.kproximate.kpLoadHeadroom | quote }}
   kpNodeMemory: {{ .Values.kproximate.kpNodeMemory | quote }}
   kpNodeTemplateName: {{ .Values.kproximate.kpNodeTemplateName | quote | required ".Values.kproximate.kpNodeTemplateName is required" }}
-  maxKPNodes: {{ .Values.kproximate.maxKPNodes | quote }}
+  maxKpNodes: {{ .Values.kproximate.maxKpNodes | quote }}
   pmAllowInsecure: {{ .Values.kproximate.pmAllowInsecure | quote }}
   pmDebug: {{ .Values.kproximate.pmDebug | quote }}
   pmUrl: {{ .Values.kproximate.pmUrl | quote | required ".Values.kproximate.pmUrl is required" }}

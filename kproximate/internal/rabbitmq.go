@@ -20,7 +20,7 @@ func NewRabbitmqConnection() (*amqp.Connection, *rabbithole.Client) {
 	return conn, rhconn
 }
 
-func NewScaleUpChannel(conn *amqp.Connection) *amqp.Channel {
+func NewChannel(conn *amqp.Connection) *amqp.Channel {
 	ch, err := conn.Channel()
 	if err != nil {
 		logger.ErrorLog.Fatalf("Failed to open a channel: %s", err)
