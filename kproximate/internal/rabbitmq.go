@@ -1,21 +1,20 @@
 package internal
 
 import (
-	"log"
-
+	"github.com/lupinelab/kproximate/logger"
+	rabbithole "github.com/michaelklishin/rabbit-hole"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/michaelklishin/rabbit-hole"
 )
 
 func NewRabbitmqConnection() (*amqp.Connection, *rabbithole.Client) {
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	if err != nil {
-		log.Panicf("Failed to connect to RabbitMQ: %s", err)
+		logger.ErrorLog.Fatalf("Failed to connect to RabbitMQ: %s", err)
 	}
 
 	rhconn, err := rabbithole.NewClient("http://localhost:15672", "guest", "guest")
 	if err != nil {
-		log.Panicf("Failed to connect to RabbitMQ: %s", err)
+		logger.ErrorLog.Fatalf("Failed to connect to RabbitMQ: %s", err)
 	}
 
 	return conn, rhconn
@@ -24,7 +23,7 @@ func NewRabbitmqConnection() (*amqp.Connection, *rabbithole.Client) {
 func NewScaleUpChannel(conn *amqp.Connection) *amqp.Channel {
 	ch, err := conn.Channel()
 	if err != nil {
-		log.Panicf("Failed to open a channel: %s", err)
+		logger.ErrorLog.Fatalf("Failed to open a channel: %s", err)
 	}
 
 	return ch
@@ -32,8 +31,8 @@ func NewScaleUpChannel(conn *amqp.Connection) *amqp.Channel {
 
 func DeclareQueue(ch *amqp.Channel, queueName string) *amqp.Queue {
 	args := amqp.Table{
-		"x-queue-type":   "quorum",
-		"delivery-limit": 3,
+		"x-queue-type":     "quorum",
+		"x-delivery-limit": 2,
 	}
 
 	q, err := ch.QueueDeclare(
@@ -45,7 +44,7 @@ func DeclareQueue(ch *amqp.Channel, queueName string) *amqp.Queue {
 		args,      // arguments
 	)
 	if err != nil {
-		log.Panicf("Failed to declare a queue: %s", err)
+		logger.ErrorLog.Fatalf("Failed to declare a queue: %s", err)
 	}
 
 	return &q

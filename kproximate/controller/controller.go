@@ -3,33 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
-	"os"
 	"time"
 
 	"github.com/lupinelab/kproximate/config"
 	"github.com/lupinelab/kproximate/internal"
+	"github.com/lupinelab/kproximate/logger"
 	"github.com/lupinelab/kproximate/scaler"
 	rabbithole "github.com/michaelklishin/rabbit-hole"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-var (
-	infoLog    *log.Logger
-	warningLog *log.Logger
-	errorLog   *log.Logger
-)
-
-func init() {
-	controllerName, err := os.Hostname()
-	if err != nil {
-		log.Panicf("Could not get worker name: %s", err)
-	}
-	infoLog = log.New(os.Stdout, fmt.Sprintf("%s INFO: ", controllerName), log.Ldate|log.Ltime)
-	warningLog = log.New(os.Stdout, fmt.Sprintf("%s WARNING: ", controllerName), log.Ldate|log.Ltime)
-	errorLog = log.New(os.Stdout, fmt.Sprintf("%s ERROR: ", controllerName), log.Ldate|log.Ltime)
-}
 
 func main() {
 	config := config.GetConfig()
@@ -55,7 +37,6 @@ func scaleUp(scaler *scaler.KProximateScaler, channel *amqp.Channel, queue *amqp
 		pendingEvents := GetQueueState(channel, queue.Name)
 		runningEvents := GetUnackedMessage(rhconn, queue.Name)
 		queuedEvents := pendingEvents + runningEvents
-		infoLog.Println(queuedEvents)
 
 		if scaler.NumKpNodes()+queuedEvents < scaler.Config.MaxKpNodes {
 			scaleEvents := scaler.AssessScaleUp(&queuedEvents)
@@ -76,9 +57,9 @@ func scaleUp(scaler *scaler.KProximateScaler, channel *amqp.Channel, queue *amqp
 						Body:         []byte(msg),
 					})
 				if err != nil {
-					log.Panicf("Failed to publish a message: %s", err)
+					logger.ErrorLog.Fatalf("Failed to publish a message: %s", err)
 				}
-				infoLog.Printf("Requested scale event: %s", scaleEvent.KpNodeName)
+				logger.InfoLog.Printf("Requested scale up event: %s", scaleEvent.KpNodeName)
 			}
 		}
 
@@ -89,7 +70,7 @@ func scaleUp(scaler *scaler.KProximateScaler, channel *amqp.Channel, queue *amqp
 func GetQueueState(scaleUpChannel *amqp.Channel, queueName string) int {
 	scaleEvents, err := scaleUpChannel.QueueInspect(queueName)
 	if err != nil {
-		log.Panicf("Failed to find queue length: %s", err)
+		logger.ErrorLog.Fatalf("Failed to find queue length: %s", err)
 	}
 
 	return scaleEvents.Messages
@@ -98,7 +79,7 @@ func GetQueueState(scaleUpChannel *amqp.Channel, queueName string) int {
 func GetUnackedMessage(rhconn *rabbithole.Client, queueName string) int {
 	queueInfo, err := rhconn.GetQueue("/", queueName)
 	if err != nil {
-		log.Panicf("Failed to find queue info: %s", err)
+		logger.ErrorLog.Fatalf("Failed to find queue info: %s", err)
 	}
 	return queueInfo.MessagesUnacknowledged
 }

@@ -3,30 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
-	"os"
 
 	"github.com/lupinelab/kproximate/config"
 	"github.com/lupinelab/kproximate/internal"
+	"github.com/lupinelab/kproximate/logger"
 	"github.com/lupinelab/kproximate/scaler"
+	"github.com/rabbitmq/amqp091-go"
 )
-
-var (
-	infoLog    *log.Logger
-	warningLog *log.Logger
-	errorLog   *log.Logger
-)
-
-func init() {
-	workerName, err := os.Hostname()
-	if err != nil {
-		log.Panicf("Could not get worker name: %s", err)
-	}
-	infoLog = log.New(os.Stdout, fmt.Sprintf("%s INFO: ", workerName), log.Ldate|log.Ltime)
-	warningLog = log.New(os.Stdout, fmt.Sprintf("%s WARNING: ", workerName), log.Ldate|log.Ltime)
-	errorLog = log.New(os.Stdout, fmt.Sprintf("%s ERROR: ", workerName), log.Ldate|log.Ltime)
-}
 
 func main() {
 	config := config.GetConfig()
@@ -46,7 +29,7 @@ func main() {
 		false, // global
 	)
 	if err != nil {
-		log.Panicf("Failed to set QoS: %s", err)
+		logger.ErrorLog.Fatalf("Failed to set QoS: %s", err)
 	}
 
 	scaleUpMsgs, err := scaleUpChannel.Consume(
@@ -59,22 +42,36 @@ func main() {
 		nil,               // args
 	)
 	if err != nil {
-		log.Panicf("Failed to register a consumer: %s", err)
+		logger.ErrorLog.Fatalf("Failed to register a consumer: %s", err)
 	}
 
 	var forever chan struct{}
 
-	go func() {
-		for scaleUpMsg := range scaleUpMsgs {
-			var scaleEvent *scaler.ScaleEvent
-			json.Unmarshal(scaleUpMsg.Body, &scaleEvent)
+	go consumeScaleUpMsgs(scaleUpMsgs, kpScaler)
 
-			ctx := context.Background()
-			kpScaler.ScaleUp(ctx, scaleEvent)
-			scaleUpMsg.Ack(false)
-		}
-	}()
-
-	infoLog.Printf("Listening for messages")
+	logger.InfoLog.Printf("Listening for messages")
 	<-forever
+}
+
+func consumeScaleUpMsgs(scaleUpMsgs <-chan amqp091.Delivery, kpScaler *scaler.KProximateScaler) {
+	for scaleUpMsg := range scaleUpMsgs {
+		var scaleEvent *scaler.ScaleEvent
+		json.Unmarshal(scaleUpMsg.Body, &scaleEvent)
+
+		if scaleUpMsg.Redelivered {
+			kpScaler.DeleteKpNode(scaleEvent.KpNodeName)
+			logger.InfoLog.Printf("Retrying scale up event: %s", scaleEvent.KpNodeName)
+		}
+
+		logger.InfoLog.Printf("Triggered scale up event: %s", scaleEvent.KpNodeName)
+		ctx := context.Background()
+		err := kpScaler.ScaleUp(ctx, scaleEvent)
+
+		if err != nil {
+			kpScaler.DeleteKpNode(scaleEvent.KpNodeName)
+			scaleUpMsg.Reject(true)
+		}
+
+		scaleUpMsg.Ack(false)
+	}
 }
