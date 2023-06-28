@@ -3,8 +3,8 @@ RUN apk add upx
 WORKDIR $GOPATH/src/kproximate
 COPY . .
 ARG TARGETARCH
-RUN cd kproximate && GOOS=linux GOARCH=$TARGETARCH go build -v -o /go/bin/kproximate
-RUN upx /go/bin/kproximate
+RUN cd kproximate/controller && GOOS=linux GOARCH=$TARGETARCH go build -v -o /go/bin/kproximate-controller
+RUN upx /go/bin/kproximate-controller
 
 # final stage
 FROM alpine
@@ -18,6 +18,6 @@ RUN adduser \
     --uid "1001" \    
     "kproximate"
 
-COPY --from=build /go/bin/kproximate .
+COPY --from=build /go/bin/kproximate-controller .
 USER kproximate:kproximate
-ENTRYPOINT ./kproximate
+ENTRYPOINT ./kproximate-controller

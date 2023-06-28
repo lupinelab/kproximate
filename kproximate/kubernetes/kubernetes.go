@@ -16,7 +16,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/homedir"
 )
 
@@ -65,21 +64,6 @@ func NewKubernetesClient() *Kubernetes {
 	}
 
 	return kubernetes
-}
-
-func (k *Kubernetes) GetNewLock(podName string, namespace string) *resourcelock.LeaseLock {
-	var lock = &resourcelock.LeaseLock{
-		LeaseMeta: metav1.ObjectMeta{
-			Name:      "kproximate-leader-lease",
-			Namespace: namespace,
-		},
-		Client: k.client.CoordinationV1(),
-		LockConfig: resourcelock.ResourceLockConfig{
-			Identity: podName,
-		},
-	}
-
-	return lock
 }
 
 func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error) {

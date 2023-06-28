@@ -3,7 +3,6 @@ kind: ConfigMap
 metadata:
   name: {{ include "kproximate.fullname" . }}
 data:
-  emptyGraceSecondsAfterCreation: {{ .Values.kproximate.emptyGraceSecondsAfterCreation | quote }}
   kpNodeCores: {{ .Values.kproximate.kpNodeCores | quote }}
   kpLoadHeadroom: {{ .Values.kproximate.kpLoadHeadroom | quote }}
   kpNodeMemory: {{ .Values.kproximate.kpNodeMemory | quote }}
@@ -14,3 +13,6 @@ data:
   pmUrl: {{ .Values.kproximate.pmUrl | quote | required ".Values.kproximate.pmUrl is required" }}
   pmUserID: {{ .Values.kproximate.pmUserID | quote | required ".Values.kproximate.pmUserID is required" }}
   pollInterval: {{ .Values.kproximate.pollInterval | quote }}
+  rabbitMQHost: {{ .Values.kproximate.rabbitMQHost | quote }}
+  rabbitMQPort: {{ .Values.kproximate.rabbitMQPort | quote }}
+  rabbitMQUser: {{ .Values.rabbitmq.auth.username | quote }}

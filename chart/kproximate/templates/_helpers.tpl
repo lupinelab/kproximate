@@ -35,7 +35,6 @@ Common labels
 */}}
 {{- define "kproximate.labels" -}}
 helm.sh/chart: {{ include "kproximate.chart" . }}
-{{ include "kproximate.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,11 +42,45 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Selector labels
+Controller labels
 */}}
-{{- define "kproximate.selectorLabels" -}}
+{{- define "kproximate.controllerLabels" -}}
+helm.sh/chart: {{ include "kproximate.chart" . }}
+{{ include "kproximate.controllerSelectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Controller selector labels
+*/}}
+{{- define "kproximate.controllerSelectorLabels" -}}
 app.kubernetes.io/name: {{ include "kproximate.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: {{ include "kproximate.name" . }}-controller
+{{- end }}
+
+{{/*
+Worker labels
+*/}}
+{{- define "kproximate.workerLabels" -}}
+helm.sh/chart: {{ include "kproximate.chart" . }}
+{{ include "kproximate.workerSelectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Worker selector labels
+*/}}
+{{- define "kproximate.workerSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "kproximate.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: {{ include "kproximate.name" . }}-worker
 {{- end }}
 
 {{/*

@@ -243,7 +243,7 @@ ptimeout:
 	logger.InfoLog.Printf("Waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
 	kctx, cancelCtx := context.WithTimeout(ctx, time.Duration(60*time.Second))
-	// Add wait for join variable
+	// Add wait for join config variable
 	defer cancelCtx()
 
 	go scaler.KCluster.WaitForJoin(

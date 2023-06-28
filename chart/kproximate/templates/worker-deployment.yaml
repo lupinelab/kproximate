@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "kproximate.fullname" . }}-worker"
+  labels:
+    {{- include "kproximate.workerLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.workerReplicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kproximate.workerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "kproximate.workerSelectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "kproximate.fullname" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: "{{ .Chart.Name }}-worker"
+          image: "lupinelab/kproximate-worker:{{ .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+          - configMapRef:
+              name: {{ include "kproximate.fullname" . }}
+          - secretRef:
+              name: {{ include "kproximate.fullname" . }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}          
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        podAntiAffinity: 
+          requiredDuringSchedulingIgnoredDuringExecution: 
+            - labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In 
+                  values:
+                  - {{ .Chart.Name }}-worker
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+              - key: node-role.kubernetes.io/master
+                operator: Exists 
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists 
+          effect: NoSchedule
+      {{- with .Values.tolerations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      - name: worker-wait-for-rabbitmq
+        image: curlimages/curl
+        args:
+        - /bin/sh
+        - -c
+        - >
+          set -x;
+          while [ $(curl -sw '%{http_code}' --user {{ .Values.rabbitmq.auth.username }}:{{ .Values.rabbitmq.auth.password }} "http://{{ .Values.kproximate.rabbitMQHost }}:15672/api/health/checks/local-alarms" -o /dev/null) -ne 200 ]; do
+            sleep 5;
+          done

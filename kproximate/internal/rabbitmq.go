@@ -1,23 +1,38 @@
 package internal
 
 import (
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+
 	"github.com/lupinelab/kproximate/logger"
-	rabbithole "github.com/michaelklishin/rabbit-hole"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func NewRabbitmqConnection() (*amqp.Connection, *rabbithole.Client) {
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+type queueInfo struct {
+	MessagesUnacknowledged int `json:"messages_unacknowledged,omitempty"`
+}
+
+func NewRabbitmqConnection(rabbitMQHost string, rabbitMQPort int, rabbitMQUser string, rabbitMQPassword string) (*amqp.Connection, *http.Client) {
+	tls := &tls.Config{InsecureSkipVerify: true}
+
+	rabbitMQUrl := fmt.Sprintf("amqps://%s:%s@%s:%d/", rabbitMQUser, rabbitMQPassword, rabbitMQHost, rabbitMQPort)
+
+	conn, err := amqp.DialTLS(rabbitMQUrl, tls)
 	if err != nil {
 		logger.ErrorLog.Fatalf("Failed to connect to RabbitMQ: %s", err)
 	}
 
-	rhconn, err := rabbithole.NewClient("http://localhost:15672", "guest", "guest")
-	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to connect to RabbitMQ: %s", err)
+	tr := &http.Transport{
+		TLSClientConfig: tls,
+	}
+	mgmtClient := &http.Client{
+		Transport: tr,
 	}
 
-	return conn, rhconn
+	return conn, mgmtClient
 }
 
 func NewChannel(conn *amqp.Connection) *amqp.Channel {
@@ -48,4 +63,30 @@ func DeclareQueue(ch *amqp.Channel, queueName string) *amqp.Queue {
 	}
 
 	return &q
+}
+
+func GetUnackedMessages(client *http.Client, rabbitMQHost string, rabbitMQUser string, rabbitMQPassword string, queueName string) int {
+	endpoint := fmt.Sprintf("http://%s:15672/api/queues/%s/%s", rabbitMQHost, url.PathEscape("/"), queueName)
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		logger.ErrorLog.Fatalf("Could not build queue query: %s", err.Error())
+	}
+
+	req.Close = true
+	req.SetBasicAuth(rabbitMQUser, rabbitMQPassword)
+
+	res, err := client.Do(req)
+	if err != nil {
+		logger.ErrorLog.Fatalf("Could not query queue: %s", err.Error())
+	}
+	defer res.Body.Close()
+
+	var queueInfo queueInfo
+
+	err = json.NewDecoder(res.Body).Decode(&queueInfo)
+	if err != nil {
+		logger.ErrorLog.Fatalf("Could not decode queue query response: %s", err.Error())
+	}
+
+	return queueInfo.MessagesUnacknowledged
 }

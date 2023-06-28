@@ -26,7 +26,7 @@ type Config struct {
 	PollInterval                   int    `env:"pollInterval"`
 	RabbitMQHost                   string `env:"rabbitMQHost"`
 	RabbitMQPassword               string `env:"rabbitMQPassword"`
-	RabbitMQPort                   string `env:"rabbitMQPort"`
+	RabbitMQPort                   int    `env:"rabbitMQPort"`
 	RabbitMQUser                   string `env:"rabbitMQUser"`
 	SshKey                         string `env:"sshKey"`
 }

@@ -15,61 +15,64 @@ func main() {
 	config := config.GetConfig()
 	kpScaler := scaler.NewScaler(config)
 
-	conn, _ := internal.NewRabbitmqConnection()
+	conn, _ := internal.NewRabbitmqConnection(
+		kpScaler.Config.RabbitMQHost,
+		kpScaler.Config.RabbitMQPort,
+		kpScaler.Config.RabbitMQUser,
+		kpScaler.Config.RabbitMQPassword,
+	)
 	defer conn.Close()
 
 	scaleUpChannel := internal.NewChannel(conn)
 	defer scaleUpChannel.Close()
 	scaleUpQueue := internal.DeclareQueue(scaleUpChannel, "scaleUpEvents")
-
-	scaleDownChannel := internal.NewChannel(conn)
-	defer scaleDownChannel.Close()
-	scaleDownQueue := internal.DeclareQueue(scaleUpChannel, "scaleDownEvents")
-
 	err := scaleUpChannel.Qos(
-		1,     // prefetch count
-		0,     // prefetch size
-		false, // global
+		1,
+		0,
+		false,
 	)
 	if err != nil {
 		logger.ErrorLog.Fatalf("Failed to set scale up QoS: %s", err)
 	}
 
-	scaleUpMsgs, err := scaleUpChannel.Consume(
-		scaleUpQueue.Name, // queue
-		"",                // consumer
-		false,             // auto-ack
-		false,             // exclusive
-		false,             // no-local
-		false,             // no-wait
-		nil,               // args
-	)
-	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to register scale up consumer: %s", err)
-	}
-
+	scaleDownChannel := internal.NewChannel(conn)
+	defer scaleDownChannel.Close()
+	scaleDownQueue := internal.DeclareQueue(scaleUpChannel, "scaleDownEvents")
 	err = scaleDownChannel.Qos(
-		1,     // prefetch count
-		0,     // prefetch size
-		false, // global
+		1,
+		0,
+		false,
 	)
 	if err != nil {
 		logger.ErrorLog.Fatalf("Failed to set scale down QoS: %s", err)
 	}
 
-	scaleDownMsgs, err := scaleUpChannel.Consume(
-		scaleDownQueue.Name, // queue
-		"",                // consumer
-		false,             // auto-ack
-		false,             // exclusive
-		false,             // no-local
-		false,             // no-wait
-		nil,               // args
+	scaleUpMsgs, err := scaleUpChannel.Consume(
+		scaleUpQueue.Name,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		logger.ErrorLog.Fatalf("Failed to register scale up consumer: %s", err)
+	}
+
+	scaleDownMsgs, err := scaleDownChannel.Consume(
+		scaleDownQueue.Name,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
 	)
 	if err != nil {
 		logger.ErrorLog.Fatalf("Failed to register scale down consumer: %s", err)
 	}
-	
+
 	go consumeScaleUpMsgs(scaleUpMsgs, kpScaler)
 
 	go consumeScaleDownMsgs(scaleDownMsgs, kpScaler)
@@ -112,7 +115,7 @@ func consumeScaleDownMsgs(scaleDownMsgs <-chan amqp091.Delivery, kpScaler *scale
 		if scaleDownMsg.Redelivered {
 			logger.InfoLog.Printf("Retrying scale down event: %s", scaleDownEvent.KpNodeName)
 		}
-	
+
 		logger.InfoLog.Printf("Triggered scale down event: %s", scaleDownEvent.KpNodeName)
 		ctx := context.Background()
 		err := kpScaler.ScaleDown(ctx, scaleDownEvent)
@@ -121,7 +124,7 @@ func consumeScaleDownMsgs(scaleDownMsgs <-chan amqp091.Delivery, kpScaler *scale
 			logger.WarningLog.Printf("Scale down event failed:, %s", err.Error())
 			scaleDownMsg.Reject(true)
 		}
-		
+
 		scaleDownMsg.Ack(false)
 	}
 }
