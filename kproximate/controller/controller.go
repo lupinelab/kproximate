@@ -27,11 +27,13 @@ func main() {
 
 	scaleUpChannel := internal.NewChannel(conn)
 	defer scaleUpChannel.Close()
+	
 	scaleUpQueue := internal.DeclareQueue(scaleUpChannel, "scaleUpEvents")
 	go scaleUp(kpScaler, scaleUpChannel, scaleUpQueue, mgmtClient)
 
 	scaleDownChannel := internal.NewChannel(conn)
 	defer scaleDownChannel.Close()
+	
 	scaleDownQueue := internal.DeclareQueue(scaleDownChannel, "scaleDownEvents")
 	go scaleDown(kpScaler, scaleDownChannel, scaleDownQueue, mgmtClient)
 

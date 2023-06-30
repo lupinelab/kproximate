@@ -170,7 +170,7 @@ func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfi
 	return vmConfig, err
 }
 
-func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, kpNodeTemplate proxmox.VmRef, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}) {
+func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef) {
 	nextID, err := p.Client.GetNextID(kpNodeTemplate.VmId())
 	if err != nil {
 		errchan <- err

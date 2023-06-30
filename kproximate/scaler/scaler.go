@@ -62,31 +62,6 @@ func NewScaler(config *config.Config) *KProximateScaler {
 	return scaler
 }
 
-func (scaler *KProximateScaler) GetCurrentScalingEvents() int {
-	pNodes, err := scaler.PCluster.GetAllKpNodes()
-	if err != nil {
-		logger.ErrorLog.Printf("Could not get pNodes: %s", err.Error())
-	}
-
-	kNodes, err := scaler.KCluster.GetKpNodes()
-	if err != nil {
-		logger.ErrorLog.Printf("Could not get kNodes: %s", err.Error())
-	}
-
-	events := 0
-match:
-	for _, pNode := range pNodes {
-		for _, kNode := range kNodes {
-			if pNode.Name == kNode.Name {
-				continue match
-			}
-		}
-		events++
-	}
-
-	return events
-}
-
 func (scaler *KProximateScaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
 	unschedulableResources, err := scaler.KCluster.GetUnschedulableResources()
 	if err != nil {
@@ -106,9 +81,7 @@ func (scaler *KProximateScaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
 
 	// go scaler.cleanUpEmptyNodes()
 
-	// if atomic.LoadInt32(&scaler.ScaleState) == 0 {
 	// 	go scaler.cleanUpStoppedNodes()
-	// }
 
 	// go scaler.removeUnbackedNodes()
 	// // TODO cleanup orphaned VMs
@@ -120,14 +93,14 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	var numMemoryNodesRequired int
 
 	if requiredResources.Cpu != 0 {
-		expectedCpu := float64(scaler.Config.KpNodeCores) * float64(numKpNodes+*queuedEvents)
+		expectedCpu := float64(scaler.Config.KpNodeCores) * float64(*queuedEvents)
 		unaccountedCpu := requiredResources.Cpu - expectedCpu
 		numCpuNodesRequired = int(math.Ceil(unaccountedCpu / float64(scaler.Config.KpNodeTemplateConfig.Cores)))
 	}
 
 	if requiredResources.Memory != 0 {
-		expectedMemory := int64(scaler.Config.KpNodeMemory<<20) * int64(numKpNodes+*queuedEvents)
-		unaccountedMemory := requiredResources.Memory - int64(expectedMemory)
+		expectedMemory := int64(scaler.Config.KpNodeMemory<<20) * (int64(*queuedEvents))
+		unaccountedMemory := requiredResources.Memory - expectedMemory
 		numMemoryNodesRequired = int(math.Ceil(float64(unaccountedMemory) / float64(scaler.Config.KpNodeTemplateConfig.Memory<<20)))
 	}
 
@@ -218,10 +191,10 @@ func (scaler *KProximateScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEv
 		pctx,
 		ok,
 		errchan,
-		scaler.Config.KpNodeTemplateRef,
 		scaleEvent.KpNodeName,
 		scaleEvent.TargetPHost.Node,
 		scaler.Config.KpNodeParams,
+		scaler.Config.KpNodeTemplateRef,
 	)
 
 ptimeout:
@@ -242,8 +215,8 @@ ptimeout:
 
 	logger.InfoLog.Printf("Waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
+	// TODO: Add wait for join config variable
 	kctx, cancelCtx := context.WithTimeout(ctx, time.Duration(60*time.Second))
-	// Add wait for join config variable
 	defer cancelCtx()
 
 	go scaler.KCluster.WaitForJoin(
@@ -299,56 +272,56 @@ func (scaler *KProximateScaler) DeleteKpNode(kpNodeName string) error {
 	return err
 }
 
-func (scaler *KProximateScaler) cleanUpEmptyNodes() {
-	emptyKpNodes, err := scaler.KCluster.GetEmptyKpNodes()
-	if err != nil {
-		logger.ErrorLog.Printf("Could not get emtpy nodes: %s", err.Error())
-	}
+// func (scaler *KProximateScaler) cleanUpEmptyNodes() {
+// 	emptyKpNodes, err := scaler.KCluster.GetEmptyKpNodes()
+// 	if err != nil {
+// 		logger.ErrorLog.Printf("Could not get emtpy nodes: %s", err.Error())
+// 	}
 
-	for _, emptyNode := range emptyKpNodes {
-		emptyPNode, err := scaler.PCluster.GetKpNode(emptyNode.Name)
-		if err != nil {
-			logger.ErrorLog.Printf("Could not get emtpy node: %s", err.Error())
-		}
+// 	for _, emptyNode := range emptyKpNodes {
+// 		emptyPNode, err := scaler.PCluster.GetKpNode(emptyNode.Name)
+// 		if err != nil {
+// 			logger.ErrorLog.Printf("Could not get emtpy node: %s", err.Error())
+// 		}
 
-		// Allow new nodes a grace period of emptiness after creation before they are targets for cleanup
-		if emptyPNode.Uptime < scaler.Config.EmptyGraceSecondsAfterCreation {
-			continue
-		}
+// 		// Allow new nodes a grace period of emptiness after creation before they are targets for cleanup
+// 		if emptyPNode.Uptime < scaler.Config.EmptyGraceSecondsAfterCreation {
+// 			continue
+// 		}
 
-		err = scaler.DeleteKpNode(emptyNode.Name)
-		if err != nil {
-			logger.WarningLog.Printf("Failed to delete empty node %s: %s", emptyNode.Name, err.Error())
-		}
+// 		err = scaler.DeleteKpNode(emptyNode.Name)
+// 		if err != nil {
+// 			logger.WarningLog.Printf("Failed to delete empty node %s: %s", emptyNode.Name, err.Error())
+// 		}
 
-		logger.InfoLog.Printf("Deleted empty node: %s", emptyNode.Name)
+// 		logger.InfoLog.Printf("Deleted empty node: %s", emptyNode.Name)
 
-	}
-}
+// 	}
+// }
 
-func (scaler *KProximateScaler) cleanUpStoppedNodes() {
-	kpNodes, err := scaler.PCluster.GetAllKpNodes()
-	if err != nil {
-		logger.ErrorLog.Printf("Could not get pNodes: %s", err.Error())
-	}
+// func (scaler *KProximateScaler) cleanUpStoppedNodes() {
+// 	kpNodes, err := scaler.PCluster.GetAllKpNodes()
+// 	if err != nil {
+// 		logger.ErrorLog.Printf("Could not get pNodes: %s", err.Error())
+// 	}
 
-	var stoppedNodes []kproxmox.VmInformation
-	for _, kpNode := range kpNodes {
-		if kpNode.Status == "stopped" {
-			stoppedNodes = append(stoppedNodes, kpNode)
-		}
-	}
+// 	var stoppedNodes []kproxmox.VmInformation
+// 	for _, kpNode := range kpNodes {
+// 		if kpNode.Status == "stopped" {
+// 			stoppedNodes = append(stoppedNodes, kpNode)
+// 		}
+// 	}
 
-	for _, stoppedNode := range stoppedNodes {
-		err := scaler.PCluster.DeleteKpNode(stoppedNode.Name)
-		if err != nil {
-			logger.WarningLog.Printf("Failed to delete stopped node %s: %s", stoppedNode.Name, err.Error())
-			continue
-		}
+// 	for _, stoppedNode := range stoppedNodes {
+// 		err := scaler.PCluster.DeleteKpNode(stoppedNode.Name)
+// 		if err != nil {
+// 			logger.WarningLog.Printf("Failed to delete stopped node %s: %s", stoppedNode.Name, err.Error())
+// 			continue
+// 		}
 
-		logger.InfoLog.Printf("Deleted stopped node %s", stoppedNode.Name)
-	}
-}
+// 		logger.InfoLog.Printf("Deleted stopped node %s", stoppedNode.Name)
+// 	}
+// }
 
 func (scaler *KProximateScaler) AssessScaleDown() *ScaleEvent {
 	allocatedResources, err := scaler.KCluster.GetKpNodesAllocatedResources()
@@ -420,7 +393,6 @@ func (scaler *KProximateScaler) selectScaleDownTarget(scaleEvent *ScaleEvent, al
 	}
 
 	if scaleEvent.ScaleType != 0 {
-		var targetNode string
 		kpNodeLoads := make(map[string]float64)
 
 		// Calculate the combined load on each kpNode
@@ -430,6 +402,8 @@ func (scaler *KProximateScaler) selectScaleDownTarget(scaleEvent *ScaleEvent, al
 					(allocatedResources[kpNode.Name].Memory / float64(scaler.Config.KpNodeMemory))
 		}
 
+		var targetNode string
+		
 		// Choose the kpnode with the lowest combined load
 		i := 0
 		for kpNode := range kpNodeLoads {
