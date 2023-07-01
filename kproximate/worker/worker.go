@@ -83,7 +83,7 @@ func main() {
 	<-forever
 }
 
-func consumeScaleUpMsgs(scaleUpMsgs <-chan amqp091.Delivery, kpScaler *scaler.KProximateScaler) {
+func consumeScaleUpMsgs(scaleUpMsgs <-chan amqp091.Delivery, kpScaler *scaler.Scaler) {
 	for scaleUpMsg := range scaleUpMsgs {
 		var scaleUpEvent *scaler.ScaleEvent
 		json.Unmarshal(scaleUpMsg.Body, &scaleUpEvent)
@@ -107,7 +107,7 @@ func consumeScaleUpMsgs(scaleUpMsgs <-chan amqp091.Delivery, kpScaler *scaler.KP
 	}
 }
 
-func consumeScaleDownMsgs(scaleDownMsgs <-chan amqp091.Delivery, kpScaler *scaler.KProximateScaler) {
+func consumeScaleDownMsgs(scaleDownMsgs <-chan amqp091.Delivery, kpScaler *scaler.Scaler) {
 	for scaleDownMsg := range scaleDownMsgs {
 		var scaleDownEvent *scaler.ScaleEvent
 		json.Unmarshal(scaleDownMsg.Body, &scaleDownEvent)

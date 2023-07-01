@@ -41,7 +41,7 @@ func main() {
 	<-forever
 }
 
-func scaleUp(scaler *scaler.KProximateScaler, channel *amqp.Channel, queue *amqp.Queue, mgmtClient *http.Client) {
+func scaleUp(scaler *scaler.Scaler, channel *amqp.Channel, queue *amqp.Queue, mgmtClient *http.Client) {
 	for {
 		pendingScaleUpEvents := getQueueState(channel, queue.Name)
 		runningScaleUpEvents := internal.GetUnackedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, queue.Name)
@@ -64,7 +64,7 @@ func scaleUp(scaler *scaler.KProximateScaler, channel *amqp.Channel, queue *amqp
 	}
 }
 
-func scaleDown(scaler *scaler.KProximateScaler, channel *amqp.Channel, queue *amqp.Queue, mgmtClient *http.Client) {
+func scaleDown(scaler *scaler.Scaler, channel *amqp.Channel, queue *amqp.Queue, mgmtClient *http.Client) {
 	for {
 		pendingScaleUpEvents := getQueueState(channel, "scaleUpEvents")
 		runningScaleUpEvents := internal.GetUnackedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, queue.Name)

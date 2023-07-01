@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
-type KProximateScaler struct {
+type Scaler struct {
 	Config   config.Config
 	KCluster kubernetes.Kubernetes
 	PCluster kproxmox.Proxmox
@@ -27,7 +27,7 @@ type ScaleEvent struct {
 	TargetPHost kproxmox.PHostInformation
 }
 
-func NewScaler(config *config.Config) *KProximateScaler {
+func NewScaler(config *config.Config) *Scaler {
 	kClient := kubernetes.NewKubernetesClient()
 	pClient := kproxmox.NewProxmoxClient(config.PmUrl, config.PmAllowInsecure, config.PmUserID, config.PmToken, config.PmDebug)
 
@@ -53,7 +53,7 @@ func NewScaler(config *config.Config) *KProximateScaler {
 		"sshkeys":   strings.Replace(url.QueryEscape(config.SshKey), "+", "%20", 1),
 	}
 
-	scaler := &KProximateScaler{
+	scaler := &Scaler{
 		Config:   *config,
 		KCluster: *kClient,
 		PCluster: *pClient,
@@ -62,18 +62,13 @@ func NewScaler(config *config.Config) *KProximateScaler {
 	return scaler
 }
 
-func (scaler *KProximateScaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
+func (scaler *Scaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
 	unschedulableResources, err := scaler.KCluster.GetUnschedulableResources()
 	if err != nil {
 		logger.ErrorLog.Fatalf("Unable to get unschedulable resources: %s", err.Error())
 	}
 
-	allKpNodes, err := scaler.PCluster.GetAllKpNodes()
-	if err != nil {
-		logger.ErrorLog.Fatalf("Unable to get kp-nodes: %s", err.Error())
-	}
-
-	requiredScaleEvents := scaler.requiredScaleEvents(unschedulableResources, len(allKpNodes), queuedEvents)
+	requiredScaleEvents := scaler.requiredScaleEvents(unschedulableResources, queuedEvents)
 
 	scaler.selectTargetPHosts(requiredScaleEvents)
 
@@ -87,7 +82,7 @@ func (scaler *KProximateScaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
 	// // TODO cleanup orphaned VMs
 }
 
-func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources, numKpNodes int, queuedEvents *int) []*ScaleEvent {
+func (scaler *Scaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources, queuedEvents *int) []*ScaleEvent {
 	requiredScaleEvents := []*ScaleEvent{}
 	var numCpuNodesRequired int
 	var numMemoryNodesRequired int
@@ -95,13 +90,13 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	if requiredResources.Cpu != 0 {
 		expectedCpu := float64(scaler.Config.KpNodeCores) * float64(*queuedEvents)
 		unaccountedCpu := requiredResources.Cpu - expectedCpu
-		numCpuNodesRequired = int(math.Ceil(unaccountedCpu / float64(scaler.Config.KpNodeTemplateConfig.Cores)))
+		numCpuNodesRequired = int(math.Ceil(unaccountedCpu / float64(scaler.Config.KpNodeCores)))
 	}
 
 	if requiredResources.Memory != 0 {
 		expectedMemory := int64(scaler.Config.KpNodeMemory<<20) * (int64(*queuedEvents))
 		unaccountedMemory := requiredResources.Memory - expectedMemory
-		numMemoryNodesRequired = int(math.Ceil(float64(unaccountedMemory) / float64(scaler.Config.KpNodeTemplateConfig.Memory<<20)))
+		numMemoryNodesRequired = int(math.Ceil(float64(unaccountedMemory) / float64(scaler.Config.KpNodeMemory<<20)))
 	}
 
 	numNodesRequired := int(math.Max(float64(numCpuNodesRequired), float64(numMemoryNodesRequired)))
@@ -137,7 +132,7 @@ func (scaler *KProximateScaler) requiredScaleEvents(requiredResources *kubernete
 	return requiredScaleEvents
 }
 
-func (scaler *KProximateScaler) selectTargetPHosts(scaleEvents []*ScaleEvent) {
+func (scaler *Scaler) selectTargetPHosts(scaleEvents []*ScaleEvent) {
 	pHosts := scaler.PCluster.GetClusterStats()
 	kpNodes := scaler.PCluster.GetRunningKpNodes()
 
@@ -177,7 +172,7 @@ selected:
 	return
 }
 
-func (scaler *KProximateScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
+func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
 	logger.InfoLog.Printf("Provisioning %s on pcluster", scaleEvent.KpNodeName)
 
 	ok := make(chan bool)
@@ -240,7 +235,7 @@ ktimeout:
 	return nil
 }
 
-func (scaler *KProximateScaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
+func (scaler *Scaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
 	err := scaler.KCluster.SlowDeleteKpNode(scaleEvent.KpNodeName)
 	if err != nil {
 		return err
@@ -255,7 +250,7 @@ func (scaler *KProximateScaler) ScaleDown(ctx context.Context, scaleEvent *Scale
 	return err
 }
 
-func (scaler *KProximateScaler) NumKpNodes() int {
+func (scaler *Scaler) NumKpNodes() int {
 	kpNodes, err := scaler.KCluster.GetKpNodes()
 	if err != nil {
 		logger.ErrorLog.Fatalf("Failed to get kp nodes: %s", err.Error())
@@ -264,7 +259,7 @@ func (scaler *KProximateScaler) NumKpNodes() int {
 	return len(kpNodes)
 }
 
-func (scaler *KProximateScaler) DeleteKpNode(kpNodeName string) error {
+func (scaler *Scaler) DeleteKpNode(kpNodeName string) error {
 	_ = scaler.KCluster.DeleteKpNode(kpNodeName)
 
 	err := scaler.PCluster.DeleteKpNode(kpNodeName)
@@ -323,7 +318,7 @@ func (scaler *KProximateScaler) DeleteKpNode(kpNodeName string) error {
 // 	}
 // }
 
-func (scaler *KProximateScaler) AssessScaleDown() *ScaleEvent {
+func (scaler *Scaler) AssessScaleDown() *ScaleEvent {
 	allocatedResources, err := scaler.KCluster.GetKpNodesAllocatedResources()
 	if err != nil {
 		logger.WarningLog.Printf("Consider scale down failed, unable to get allocated resources: %s", err.Error())
@@ -386,7 +381,7 @@ func (scaler *KProximateScaler) AssessScaleDown() *ScaleEvent {
 	}
 }
 
-func (scaler *KProximateScaler) selectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
+func (scaler *Scaler) selectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
 	kpNodes, err := scaler.KCluster.GetKpNodes()
 	if err != nil {
 		logger.WarningLog.Printf("Consider scale down failed, unable get kp-nodes: %s", err.Error())
