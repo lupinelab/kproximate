@@ -55,8 +55,8 @@ func NewScaler(config *config.Config) *Scaler {
 
 	scaler := &Scaler{
 		Config:   *config,
-		KCluster: *kClient,
-		PCluster: *pClient,
+		KCluster: kClient,
+		PCluster: pClient,
 	}
 
 	return scaler
@@ -141,8 +141,8 @@ selected:
 	skipHost:
 		for _, pHost := range pHosts {
 			// Check for a scaleEvent targeting the pHost
-			for _, scaleEvent := range scaleEvents {
-				if scaleEvent.TargetPHost.Id == pHost.Id {
+			for _, allScaleEvent := range scaleEvents {
+				if allScaleEvent.TargetPHost.Id == pHost.Id {
 					continue skipHost
 				}
 			}
@@ -161,7 +161,7 @@ selected:
 		var maxAvailMemNode kproxmox.PHostInformation
 
 		for i, pHost := range pHosts {
-			if i == 0 || (pHost.Maxmem-pHost.Mem) > maxAvailMemNode.Mem {
+			if i == 0 || (pHost.Maxmem-pHost.Mem) > maxAvailMemNode.Maxmem-maxAvailMemNode.Mem {
 				maxAvailMemNode = pHost
 			}
 		}
@@ -179,8 +179,8 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 
 	errchan := make(chan error)
 
-	pctx, cancelCtx := context.WithTimeout(ctx, time.Duration(20*time.Second))
-	defer cancelCtx()
+	pctx, cancelPCtx := context.WithTimeout(ctx, time.Duration(20*time.Second))
+	defer cancelPCtx()
 
 	go scaler.PCluster.NewKpNode(
 		pctx,
@@ -195,12 +195,10 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 ptimeout:
 	select {
 	case <-pctx.Done():
-		cancelCtx()
-
+		cancelPCtx()
 		return fmt.Errorf("Timed out waiting for %s to start", scaleEvent.KpNodeName)
 
 	case err := <-errchan:
-
 		return err
 
 	case <-ok:
@@ -211,8 +209,8 @@ ptimeout:
 	logger.InfoLog.Printf("Waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
 	// TODO: Add wait for join config variable
-	kctx, cancelCtx := context.WithTimeout(ctx, time.Duration(60*time.Second))
-	defer cancelCtx()
+	kctx, cancelKCtx := context.WithTimeout(ctx, time.Duration(60*time.Second))
+	defer cancelKCtx()
 
 	go scaler.KCluster.WaitForJoin(
 		kctx,
@@ -223,7 +221,7 @@ ptimeout:
 ktimeout:
 	select {
 	case <-kctx.Done():
-		cancelCtx()
+		cancelKCtx()
 		return fmt.Errorf("Timed out waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
 	case <-ok:
@@ -398,7 +396,7 @@ func (scaler *Scaler) selectScaleDownTarget(scaleEvent *ScaleEvent, allocatedRes
 		}
 
 		var targetNode string
-		
+
 		// Choose the kpnode with the lowest combined load
 		i := 0
 		for kpNode := range kpNodeLoads {

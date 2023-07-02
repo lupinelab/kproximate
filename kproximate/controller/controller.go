@@ -37,6 +37,8 @@ func main() {
 	scaleDownQueue := internal.DeclareQueue(scaleDownChannel, "scaleDownEvents")
 	go scaleDown(kpScaler, scaleDownChannel, scaleDownQueue, mgmtClient)
 
+	logger.InfoLog.Println("Controller started")
+
 	var forever chan struct{}
 	<-forever
 }

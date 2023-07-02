@@ -77,7 +77,7 @@ func main() {
 
 	go consumeScaleDownMsgs(scaleDownMsgs, kpScaler)
 
-	logger.InfoLog.Printf("Listening for scale events")
+	logger.InfoLog.Println("Listening for scale events")
 
 	var forever chan struct{}
 	<-forever

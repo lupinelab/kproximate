@@ -19,7 +19,21 @@ import (
 	"k8s.io/client-go/util/homedir"
 )
 
-type Kubernetes struct {
+type Kubernetes interface {
+	GetUnschedulableResources() (*UnschedulableResources, error)
+	GetFailedSchedulingDueToControlPlaneTaint() (bool, error)
+	GetKpNodes() ([]apiv1.Node, error)
+	GetNodePods(kpNodeName string) ([]apiv1.Pod, error)
+	GetKpNodesAllocatedResources() (map[string]*AllocatedResources, error)
+	GetEmptyKpNodes() ([]apiv1.Node, error)
+	WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
+	DeleteKpNode(kpNodeName string) error
+	SlowDeleteKpNode(kpNodeName string) error
+	CordonKpNode(KpNodeName string) error
+	EvictPod(podName, namespace string) error
+}
+
+type KubernetesClient struct {
 	client *kubernetes.Clientset
 }
 
@@ -33,7 +47,7 @@ type AllocatedResources struct {
 	Memory float64
 }
 
-func NewKubernetesClient() *Kubernetes {
+func NewKubernetesClient() *KubernetesClient {
 	var kubeconfig *string
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
@@ -59,14 +73,14 @@ func NewKubernetesClient() *Kubernetes {
 		panic(err.Error())
 	}
 
-	kubernetes := &Kubernetes{
+	kubernetes := &KubernetesClient{
 		client: clientset,
 	}
 
 	return kubernetes
 }
 
-func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error) {
+func (k *KubernetesClient) GetUnschedulableResources() (*UnschedulableResources, error) {
 	var rCpu float64
 	var rMemory float64
 
@@ -103,7 +117,7 @@ func (k *Kubernetes) GetUnschedulableResources() (*UnschedulableResources, error
 	return unschedulableResources, err
 }
 
-func (k *Kubernetes) GetFailedSchedulingDueToControlPlaneTaint() (bool, error) {
+func (k *KubernetesClient) GetFailedSchedulingDueToControlPlaneTaint() (bool, error) {
 	pods, err := k.client.CoreV1().Pods("").List(
 		context.TODO(),
 		metav1.ListOptions{},
@@ -126,7 +140,7 @@ func (k *Kubernetes) GetFailedSchedulingDueToControlPlaneTaint() (bool, error) {
 	return false, nil
 }
 
-func (k *Kubernetes) GetKpNodes() ([]apiv1.Node, error) {
+func (k *KubernetesClient) GetKpNodes() ([]apiv1.Node, error) {
 	nodes, err := k.client.CoreV1().Nodes().List(
 		context.TODO(),
 		metav1.ListOptions{},
@@ -148,7 +162,7 @@ func (k *Kubernetes) GetKpNodes() ([]apiv1.Node, error) {
 	return kpNodes, err
 }
 
-func (k *Kubernetes) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
+func (k *KubernetesClient) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
 	pods, err := k.client.CoreV1().Pods("").List(
 		context.TODO(),
 		metav1.ListOptions{
@@ -162,7 +176,7 @@ func (k *Kubernetes) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
 	return pods.Items, err
 }
 
-func (k *Kubernetes) GetKpNodesAllocatedResources() (map[string]*AllocatedResources, error) {
+func (k *KubernetesClient) GetKpNodesAllocatedResources() (map[string]*AllocatedResources, error) {
 	kpNodes, err := k.GetKpNodes()
 	if err != nil {
 		return nil, err
@@ -197,7 +211,7 @@ func (k *Kubernetes) GetKpNodesAllocatedResources() (map[string]*AllocatedResour
 	return allocatedResources, err
 }
 
-func (k *Kubernetes) GetEmptyKpNodes() ([]apiv1.Node, error) {
+func (k *KubernetesClient) GetEmptyKpNodes() ([]apiv1.Node, error) {
 	nodes, err := k.GetKpNodes()
 	if err != nil {
 		return nil, err
@@ -224,7 +238,7 @@ func (k *Kubernetes) GetEmptyKpNodes() ([]apiv1.Node, error) {
 	return emptyNodes, err
 }
 
-func (k *Kubernetes) WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
+func (k *KubernetesClient) WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
 	for {
 		newkpNode, _ := k.client.CoreV1().Nodes().Get(
 			context.TODO(),
@@ -240,7 +254,7 @@ func (k *Kubernetes) WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeN
 	}
 }
 
-func (k *Kubernetes) DeleteKpNode(kpNodeName string) error {
+func (k *KubernetesClient) DeleteKpNode(kpNodeName string) error {
 	err := k.CordonKpNode(kpNodeName)
 	if err != nil {
 		return err
@@ -267,7 +281,7 @@ func (k *Kubernetes) DeleteKpNode(kpNodeName string) error {
 	return err
 }
 
-func (k *Kubernetes) SlowDeleteKpNode(kpNodeName string) error {
+func (k *KubernetesClient) SlowDeleteKpNode(kpNodeName string) error {
 	err := k.CordonKpNode(kpNodeName)
 	if err != nil {
 		return err
@@ -297,7 +311,7 @@ func (k *Kubernetes) SlowDeleteKpNode(kpNodeName string) error {
 	return err
 }
 
-func (k *Kubernetes) CordonKpNode(KpNodeName string) error {
+func (k *KubernetesClient) CordonKpNode(KpNodeName string) error {
 	kpNode, err := k.client.CoreV1().Nodes().Get(
 		context.TODO(),
 		KpNodeName,
@@ -317,7 +331,7 @@ func (k *Kubernetes) CordonKpNode(KpNodeName string) error {
 	return err
 }
 
-func (k *Kubernetes) EvictPod(podName, namespace string) error {
+func (k *KubernetesClient) EvictPod(podName, namespace string) error {
 	return k.client.PolicyV1().Evictions(namespace).Evict(
 		context.TODO(),
 		&policy.Eviction{

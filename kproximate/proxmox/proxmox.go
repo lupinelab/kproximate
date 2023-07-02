@@ -50,11 +50,21 @@ type VMConfig struct {
 	Memory int    `json:"memory"`
 }
 
-type Proxmox struct {
+type Proxmox interface {
+	GetClusterStats() []PHostInformation
+	GetRunningKpNodes() []VmInformation
+	GetAllKpNodes() ([]VmInformation, error)
+	GetKpNode(kpNodeName string) (VmInformation, error)
+	GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfig, error)
+	NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef)
+	DeleteKpNode(kpNodeName string) error
+}
+
+type ProxmoxClient struct {
 	Client *proxmox.Client
 }
 
-func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_token string, debug bool) *Proxmox {
+func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_token string, debug bool) *ProxmoxClient {
 	tlsconf := &tls.Config{InsecureSkipVerify: allowinsecure}
 	newClient, err := proxmox.NewClient(pm_url, nil, "", tlsconf, "", 300)
 	if err != nil {
@@ -64,14 +74,14 @@ func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_toke
 
 	*proxmox.Debug = debug
 
-	proxmox := &Proxmox{
+	proxmox := &ProxmoxClient{
 		Client: newClient,
 	}
 
 	return proxmox
 }
 
-func (p *Proxmox) GetClusterStats() []PHostInformation {
+func (p *ProxmoxClient) GetClusterStats() []PHostInformation {
 	hostList, err := p.Client.GetResourceList("node")
 	if err != nil {
 		panic(err.Error())
@@ -87,7 +97,7 @@ func (p *Proxmox) GetClusterStats() []PHostInformation {
 	return pHosts
 }
 
-func (p *Proxmox) GetRunningKpNodes() []VmInformation {
+func (p *ProxmoxClient) GetRunningKpNodes() []VmInformation {
 	vmlist, err := p.Client.GetVmList()
 	if err != nil {
 		panic(err.Error())
@@ -113,7 +123,7 @@ func (p *Proxmox) GetRunningKpNodes() []VmInformation {
 	return kpNodes
 }
 
-func (p *Proxmox) GetAllKpNodes() ([]VmInformation, error) {
+func (p *ProxmoxClient) GetAllKpNodes() ([]VmInformation, error) {
 	vmlist, err := p.Client.GetVmList()
 	if err != nil {
 		return nil, err
@@ -139,7 +149,7 @@ func (p *Proxmox) GetAllKpNodes() ([]VmInformation, error) {
 	return kpNodes, err
 }
 
-func (p *Proxmox) GetKpNode(kpNodeName string) (VmInformation, error) {
+func (p *ProxmoxClient) GetKpNode(kpNodeName string) (VmInformation, error) {
 	kpNodes, err := p.GetAllKpNodes()
 	if err != nil {
 		return VmInformation{}, err
@@ -154,7 +164,7 @@ func (p *Proxmox) GetKpNode(kpNodeName string) (VmInformation, error) {
 	return VmInformation{}, err
 }
 
-func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfig, error) {
+func (p *ProxmoxClient) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfig, error) {
 	config, err := p.Client.GetVmConfig(kpNodeTemplateRef)
 	if err != nil {
 		return VMConfig{}, err
@@ -170,7 +180,7 @@ func (p *Proxmox) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfi
 	return vmConfig, err
 }
 
-func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef) {
+func (p *ProxmoxClient) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef) {
 	nextID, err := p.Client.GetNextID(kpNodeTemplate.VmId())
 	if err != nil {
 		errchan <- err
@@ -214,7 +224,7 @@ func (p *Proxmox) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- 
 	ok <- true
 }
 
-func (p *Proxmox) DeleteKpNode(kpNodeName string) error {
+func (p *ProxmoxClient) DeleteKpNode(kpNodeName string) error {
 	kpNode, err := p.GetKpNode(kpNodeName)
 	if err != nil {
 		return err
