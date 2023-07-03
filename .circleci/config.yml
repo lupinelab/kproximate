@@ -1,0 +1,73 @@
+version: 2.1
+
+commands:
+  setup_helm:
+    steps:
+      - run: curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      - run: chmod 700 get_helm.sh
+      - run: ./get_helm.sh
+      - run: helm plugin install https://github.com/chartmuseum/helm-push
+
+jobs:
+  test:
+    working_directory: ~/project/kproximate
+    docker: 
+      - image: cimg/go:1.20
+    steps:
+      - checkout:
+          path: ~/project
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "go.sum" }}
+            - go-mod-v1
+      - run:
+          name: Install Dependencies
+          command: go get ./...
+      - save_cache:
+          key: go-mod-v4-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
+      - run: 
+          name: Run tests
+          command: go test ./...
+  build_and_publish:
+    docker:
+      - image: cimg/go:1.20
+    steps:
+      - setup_remote_docker
+      - checkout
+      - run: 
+          name: Setup docker buildx
+          command: docker buildx create --use --name multiarch --driver docker-container
+      - run:
+          name: Login to dockerhub
+          command: docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
+      - run:
+          name: Build & push controller image
+          command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.controller -t lupinelab/kproximate-controller:$CIRCLE_TAG --push .
+      - run:
+          name: Build & push worker image
+          command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.worker -t lupinelab/kproximate-worker:$CIRCLE_TAG --push .
+      - setup_helm
+      - run:
+          name: Publish helm chart
+          command: helm cm-push chart/kproximate https://charts.lupinelab.co.uk
+
+workflows:
+  test_build_and_publish:
+    jobs:
+      - test:
+          filters:
+            tags:
+              only: /\d+\.\d+\.\d+/
+      - build_and_publish:
+          context:
+            - dockerhub
+            - charts.lupinelab.co.uk
+          requires:
+            - test
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /\d+\.\d+\.\d+/
