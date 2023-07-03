@@ -59,6 +59,7 @@ func scaleUp(scaler *scaler.Scaler, channel *amqp.Channel, queue *amqp.Queue, mg
 					logger.ErrorLog.Fatalf("Failed to publish a message: %s", err)
 				}
 				logger.InfoLog.Printf("Requested scale up event: %s", scaleUpEvent.KpNodeName)
+				time.Sleep(time.Second * 1)
 			}
 		}
 
