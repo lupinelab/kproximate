@@ -50,8 +50,11 @@ jobs:
           command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.worker -t lupinelab/kproximate-worker:$CIRCLE_TAG --push .
       - setup_helm
       - run:
-          name: Publish helm chart
-          command: helm cm-push chart/kproximate https://charts.lupinelab.co.uk
+          name: Package the helm chart
+          command: helm package chart/kproximate/ --version $CIRCLE_TAG
+      - run:
+          name: Push the helm chart
+          command: helm cm-push kproximate-$CIRCLE_TAG.tgz https://charts.lupinelab.co.uk
 
 workflows:
   test_build_and_publish:
