@@ -24,7 +24,7 @@ jobs:
           name: Install Dependencies
           command: go get ./...
       - save_cache:
-          key: go-mod-v4-{{ checksum "go.sum" }}
+          key: go-mod-v1-{{ checksum "go.sum" }}
           paths:
             - "/go/pkg/mod"
       - run: 

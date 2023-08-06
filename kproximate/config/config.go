@@ -39,5 +39,14 @@ func GetConfig() *Config {
 		panic(err.Error())
 	}
 
+	*config = validateConfig(config)
+
 	return config
+}
+
+func validateConfig(config *Config) Config {
+	if config.KpLoadHeadroom < 0.2 {
+		config.KpLoadHeadroom = 0.2
+	}
+	return *config
 }

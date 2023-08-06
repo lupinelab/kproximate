@@ -12,10 +12,6 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
-type pHostList struct {
-	Data []PHostInformation
-}
-
 type PHostInformation struct {
 	Id     string  `json:"id"`
 	Node   string  `json:"node"`
@@ -64,13 +60,13 @@ type ProxmoxClient struct {
 	Client *proxmox.Client
 }
 
-func NewProxmoxClient(pm_url string, allowinsecure bool, pm_user string, pm_token string, debug bool) *ProxmoxClient {
-	tlsconf := &tls.Config{InsecureSkipVerify: allowinsecure}
+func NewProxmoxClient(pm_url string, allowInsecure bool, pmUser string, pmToken string, debug bool) *ProxmoxClient {
+	tlsconf := &tls.Config{InsecureSkipVerify: allowInsecure}
 	newClient, err := proxmox.NewClient(pm_url, nil, "", tlsconf, "", 300)
 	if err != nil {
 		panic(err.Error())
 	}
-	newClient.SetAPIToken(pm_user, pm_token)
+	newClient.SetAPIToken(pmUser, pmToken)
 
 	*proxmox.Debug = debug
 
@@ -180,7 +176,15 @@ func (p *ProxmoxClient) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (V
 	return vmConfig, err
 }
 
-func (p *ProxmoxClient) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef) {
+func (p *ProxmoxClient) NewKpNode(
+	ctx context.Context,
+	ok chan<- bool,
+	errchan chan<- error,
+	newKpNodeName string,
+	targetNode string,
+	kpNodeParams map[string]interface{},
+	kpNodeTemplate proxmox.VmRef,
+) {
 	nextID, err := p.Client.GetNextID(kpNodeTemplate.VmId())
 	if err != nil {
 		errchan <- err
@@ -203,7 +207,7 @@ func (p *ProxmoxClient) NewKpNode(ctx context.Context, ok chan<- bool, errchan c
 	for {
 		newVmRef, err := p.Client.GetVmRefByName(newKpNodeName)
 		if err != nil {
-			time.Sleep(1 * time.Second)
+			time.Sleep(time.Second * 1)
 			continue
 		}
 

@@ -27,15 +27,13 @@ func main() {
 
 	scaleUpChannel := internal.NewChannel(conn)
 	defer scaleUpChannel.Close()
-	
 	scaleUpQueue := internal.DeclareQueue(scaleUpChannel, "scaleUpEvents")
-	go scaleUp(kpScaler, scaleUpChannel, scaleUpQueue, mgmtClient)
+	go AssessScaleUp(kpScaler, scaleUpChannel, scaleUpQueue, mgmtClient)
 
 	scaleDownChannel := internal.NewChannel(conn)
 	defer scaleDownChannel.Close()
-	
 	scaleDownQueue := internal.DeclareQueue(scaleDownChannel, "scaleDownEvents")
-	go scaleDown(kpScaler, scaleDownChannel, scaleDownQueue, mgmtClient)
+	go AssessScaleDown(kpScaler, scaleDownChannel, scaleDownQueue, mgmtClient)
 
 	logger.InfoLog.Println("Controller started")
 
@@ -43,18 +41,29 @@ func main() {
 	<-forever
 }
 
-func scaleUp(scaler *scaler.Scaler, channel *amqp.Channel, queue *amqp.Queue, mgmtClient *http.Client) {
+func AssessScaleUp(scaler *scaler.Scaler, scaleUpChannel *amqp.Channel, scaleUpQueue *amqp.Queue, mgmtClient *http.Client) {
 	for {
-		pendingScaleUpEvents := getQueueState(channel, queue.Name)
-		runningScaleUpEvents := internal.GetUnackedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, queue.Name)
+		pendingScaleUpEvents := scaleUpQueue.Messages
+		runningScaleUpEvents := internal.GetUnAckedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, scaleUpQueue.Name)
 		allScaleUpEvents := pendingScaleUpEvents + runningScaleUpEvents
 
 		if scaler.NumKpNodes()+allScaleUpEvents < scaler.Config.MaxKpNodes {
-			scaleEvents := scaler.AssessScaleUp(&allScaleUpEvents)
+			unschedulableResources, err := scaler.KCluster.GetUnschedulableResources()
+			if err != nil {
+				logger.ErrorLog.Fatalf("Assess scale up failed, unable to get unschedulable resources: %s", err.Error())
+			}
 
-			for _, scaleUpEvent := range scaleEvents {
+			scaleUpEvents := scaler.RequiredScaleEvents(unschedulableResources, allScaleUpEvents)
+			if len(scaleUpEvents) > 0 {
+				scaler.SelectTargetPHosts(scaleUpEvents)
+			}
+
+			for _, scaleUpEvent := range scaleUpEvents {
 				msg, err := json.Marshal(scaleUpEvent)
-				err = sendScaleEventMsg(msg, channel, queue.Name)
+				if err != nil {
+					logger.ErrorLog.Fatalf("Failed to marshal scale up event: %s", err)
+				}
+				err = sendScaleEventMsg(msg, scaleUpChannel, scaleUpQueue.Name)
 				if err != nil {
 					logger.ErrorLog.Fatalf("Failed to publish a message: %s", err)
 				}
@@ -63,27 +72,43 @@ func scaleUp(scaler *scaler.Scaler, channel *amqp.Channel, queue *amqp.Queue, mg
 			}
 		}
 
-		time.Sleep(time.Duration(scaler.Config.PollInterval) * time.Second)
+		time.Sleep(time.Second * time.Duration(scaler.Config.PollInterval))
 	}
 }
 
-func scaleDown(scaler *scaler.Scaler, channel *amqp.Channel, queue *amqp.Queue, mgmtClient *http.Client) {
+func AssessScaleDown(scaler *scaler.Scaler, scaleDownChannel *amqp.Channel, scaleDownQueue *amqp.Queue, mgmtClient *http.Client) {
 	for {
-		pendingScaleUpEvents := getQueueState(channel, "scaleUpEvents")
-		runningScaleUpEvents := internal.GetUnackedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, queue.Name)
+		pendingScaleUpEvents := internal.GetQueueState(scaleDownChannel, "scaleUpEvents")
+		runningScaleUpEvents := internal.GetUnAckedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, "scaleUpEvents")
 		allScaleUpEvents := pendingScaleUpEvents + runningScaleUpEvents
 
-		pendingScaleDownEvents := getQueueState(channel, queue.Name)
-		runningScaleDownEvents := internal.GetUnackedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, queue.Name)
+		pendingScaleDownEvents := scaleDownQueue.Messages
+		runningScaleDownEvents := internal.GetUnAckedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, scaleDownQueue.Name)
 		allScaleDownEvents := pendingScaleDownEvents + runningScaleDownEvents
 
 		allEvents := allScaleUpEvents + allScaleDownEvents
+		numKpNodes := scaler.NumKpNodes()
 
-		if allEvents == 0 || scaler.NumKpNodes() != 0 {
-			scaleDownEvent := scaler.AssessScaleDown()
+		if (allEvents == 0 && numKpNodes > 0) {
+			allocatedResources, err := scaler.KCluster.GetAllocatedResources()
+			if err != nil {
+				logger.ErrorLog.Fatalf("Unable to get allocated resources: %s", err.Error())
+			}
+
+			scaleDownEvent := scaler.AssessScaleDown(allocatedResources, numKpNodes)
 			if scaleDownEvent != nil {
+				kpNodes, err := scaler.KCluster.GetKpNodes()
+				if err != nil {
+					logger.ErrorLog.Fatalf("Unable get kp-nodes: %s", err.Error())
+				}
+
+				scaler.SelectScaleDownTarget(scaleDownEvent, allocatedResources, kpNodes)
 				msg, err := json.Marshal(scaleDownEvent)
-				err = sendScaleEventMsg(msg, channel, queue.Name)
+				if err != nil {
+					logger.ErrorLog.Fatalf("Failed to marshal scale down event: %s", err)
+				}
+
+				err = sendScaleEventMsg(msg, scaleDownChannel, scaleDownQueue.Name)
 				if err != nil {
 					logger.ErrorLog.Fatalf("Failed to publish a message: %s", err)
 				}
@@ -91,7 +116,7 @@ func scaleDown(scaler *scaler.Scaler, channel *amqp.Channel, queue *amqp.Queue, 
 			}
 		}
 
-		time.Sleep(time.Duration(scaler.Config.PollInterval) * time.Second)
+		time.Sleep(time.Second * time.Duration(scaler.Config.PollInterval))
 	}
 }
 
@@ -108,13 +133,4 @@ func sendScaleEventMsg(msg []byte, channel *amqp.Channel, queueName string) erro
 			ContentType:  "application/json",
 			Body:         []byte(msg),
 		})
-}
-
-func getQueueState(scaleUpChannel *amqp.Channel, queueName string) int {
-	scaleEvents, err := scaleUpChannel.QueueInspect(queueName)
-	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to find queue length: %s", err)
-	}
-
-	return scaleEvents.Messages
 }

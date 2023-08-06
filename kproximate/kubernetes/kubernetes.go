@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1"
@@ -21,16 +20,13 @@ import (
 
 type Kubernetes interface {
 	GetUnschedulableResources() (*UnschedulableResources, error)
-	GetFailedSchedulingDueToControlPlaneTaint() (bool, error)
+	IsFailedSchedulingDueToControlPlaneTaint() (bool, error)
 	GetKpNodes() ([]apiv1.Node, error)
-	GetNodePods(kpNodeName string) ([]apiv1.Pod, error)
-	GetKpNodesAllocatedResources() (map[string]*AllocatedResources, error)
+	GetAllocatedResources() (map[string]*AllocatedResources, error)
 	GetEmptyKpNodes() ([]apiv1.Node, error)
 	WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
 	DeleteKpNode(kpNodeName string) error
-	SlowDeleteKpNode(kpNodeName string) error
 	CordonKpNode(KpNodeName string) error
-	EvictPod(podName, namespace string) error
 }
 
 type KubernetesClient struct {
@@ -117,7 +113,7 @@ func (k *KubernetesClient) GetUnschedulableResources() (*UnschedulableResources,
 	return unschedulableResources, err
 }
 
-func (k *KubernetesClient) GetFailedSchedulingDueToControlPlaneTaint() (bool, error) {
+func (k *KubernetesClient) IsFailedSchedulingDueToControlPlaneTaint() (bool, error) {
 	pods, err := k.client.CoreV1().Pods("").List(
 		context.TODO(),
 		metav1.ListOptions{},
@@ -129,14 +125,12 @@ func (k *KubernetesClient) GetFailedSchedulingDueToControlPlaneTaint() (bool, er
 	for _, pod := range pods.Items {
 		for _, condition := range pod.Status.Conditions {
 			if condition.Type == apiv1.PodScheduled && condition.Status == apiv1.ConditionFalse && condition.Reason == "Unschedulable" {
-				if strings.Contains(condition.Message, "untolerated taint {node-role.kubernetes.io/control-plane: }") {
-
+				if strings.Contains(condition.Message, "untolerated taint {node-role.kubernetes.io/control-plane:") {
 					return true, nil
 				}
 			}
 		}
 	}
-
 	return false, nil
 }
 
@@ -162,21 +156,7 @@ func (k *KubernetesClient) GetKpNodes() ([]apiv1.Node, error) {
 	return kpNodes, err
 }
 
-func (k *KubernetesClient) GetNodePods(kpNodeName string) ([]apiv1.Pod, error) {
-	pods, err := k.client.CoreV1().Pods("").List(
-		context.TODO(),
-		metav1.ListOptions{
-			FieldSelector: fmt.Sprintf("spec.nodeName=%s", kpNodeName),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return pods.Items, err
-}
-
-func (k *KubernetesClient) GetKpNodesAllocatedResources() (map[string]*AllocatedResources, error) {
+func (k *KubernetesClient) GetAllocatedResources() (map[string]*AllocatedResources, error) {
 	kpNodes, err := k.GetKpNodes()
 	if err != nil {
 		return nil, err
@@ -249,6 +229,7 @@ func (k *KubernetesClient) WaitForJoin(ctx context.Context, ok chan<- bool, newK
 		for _, condition := range newkpNode.Status.Conditions {
 			if condition.Type == apiv1.NodeReady && condition.Status == apiv1.ConditionTrue {
 				ok <- true
+				return
 			}
 		}
 	}
@@ -260,13 +241,26 @@ func (k *KubernetesClient) DeleteKpNode(kpNodeName string) error {
 		return err
 	}
 
-	pods, err := k.GetNodePods(kpNodeName)
+	pods, err := k.client.CoreV1().Pods("").List(
+		context.TODO(),
+		metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("spec.nodeName=%s", kpNodeName),
+		},
+	)
 	if err != nil {
 		return err
 	}
 
-	for _, pod := range pods {
-		k.EvictPod(pod.Name, pod.Namespace)
+	for _, pod := range pods.Items {
+		k.client.PolicyV1().Evictions(pod.Namespace).Evict(
+			context.TODO(),
+			&policy.Eviction{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pod.Name,
+					Namespace: pod.Namespace,
+				},
+			},
+		)
 	}
 
 	err = k.client.CoreV1().Nodes().Delete(
@@ -281,40 +275,10 @@ func (k *KubernetesClient) DeleteKpNode(kpNodeName string) error {
 	return err
 }
 
-func (k *KubernetesClient) SlowDeleteKpNode(kpNodeName string) error {
-	err := k.CordonKpNode(kpNodeName)
-	if err != nil {
-		return err
-	}
-
-	pods, err := k.GetNodePods(kpNodeName)
-	if err != nil {
-		return err
-	}
-
-	for _, pod := range pods {
-		time.Sleep(time.Second * 3)
-		k.EvictPod(pod.Name, pod.Namespace)
-	}
-
-	// TODO: Wait for the node to be empty or timeout after a minute and kill it.
-
-	err = k.client.CoreV1().Nodes().Delete(
-		context.TODO(),
-		kpNodeName,
-		metav1.DeleteOptions{},
-	)
-	if err != nil {
-		return err
-	}
-
-	return err
-}
-
-func (k *KubernetesClient) CordonKpNode(KpNodeName string) error {
+func (k *KubernetesClient) CordonKpNode(kpNodeName string) error {
 	kpNode, err := k.client.CoreV1().Nodes().Get(
 		context.TODO(),
-		KpNodeName,
+		kpNodeName,
 		metav1.GetOptions{},
 	)
 	if err != nil {
@@ -329,16 +293,4 @@ func (k *KubernetesClient) CordonKpNode(KpNodeName string) error {
 	)
 
 	return err
-}
-
-func (k *KubernetesClient) EvictPod(podName, namespace string) error {
-	return k.client.PolicyV1().Evictions(namespace).Evict(
-		context.TODO(),
-		&policy.Eviction{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      podName,
-				Namespace: namespace,
-			},
-		},
-	)
 }

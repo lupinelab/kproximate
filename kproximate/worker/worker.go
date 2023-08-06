@@ -8,7 +8,7 @@ import (
 	"github.com/lupinelab/kproximate/internal"
 	"github.com/lupinelab/kproximate/logger"
 	"github.com/lupinelab/kproximate/scaler"
-	"github.com/rabbitmq/amqp091-go"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func main() {
@@ -73,9 +73,9 @@ func main() {
 		logger.ErrorLog.Fatalf("Failed to register scale down consumer: %s", err)
 	}
 
-	go consumeScaleUpMsgs(scaleUpMsgs, kpScaler)
+	go consumeScaleUpMsgs(kpScaler, scaleUpMsgs)
 
-	go consumeScaleDownMsgs(scaleDownMsgs, kpScaler)
+	go consumeScaleDownMsgs(kpScaler, scaleDownMsgs)
 
 	logger.InfoLog.Println("Listening for scale events")
 
@@ -83,7 +83,7 @@ func main() {
 	<-forever
 }
 
-func consumeScaleUpMsgs(scaleUpMsgs <-chan amqp091.Delivery, kpScaler *scaler.Scaler) {
+func consumeScaleUpMsgs(kpScaler *scaler.Scaler, scaleUpMsgs <-chan amqp.Delivery) {
 	for scaleUpMsg := range scaleUpMsgs {
 		var scaleUpEvent *scaler.ScaleEvent
 		json.Unmarshal(scaleUpMsg.Body, &scaleUpEvent)
@@ -107,7 +107,7 @@ func consumeScaleUpMsgs(scaleUpMsgs <-chan amqp091.Delivery, kpScaler *scaler.Sc
 	}
 }
 
-func consumeScaleDownMsgs(scaleDownMsgs <-chan amqp091.Delivery, kpScaler *scaler.Scaler) {
+func consumeScaleDownMsgs(kpScaler *scaler.Scaler, scaleDownMsgs <-chan amqp.Delivery) {
 	for scaleDownMsg := range scaleDownMsgs {
 		var scaleDownEvent *scaler.ScaleEvent
 		json.Unmarshal(scaleDownMsg.Body, &scaleDownEvent)

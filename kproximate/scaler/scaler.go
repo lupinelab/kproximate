@@ -12,6 +12,7 @@ import (
 	"github.com/lupinelab/kproximate/kubernetes"
 	"github.com/lupinelab/kproximate/logger"
 	kproxmox "github.com/lupinelab/kproximate/proxmox"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
@@ -62,39 +63,19 @@ func NewScaler(config *config.Config) *Scaler {
 	return scaler
 }
 
-func (scaler *Scaler) AssessScaleUp(queuedEvents *int) []*ScaleEvent {
-	unschedulableResources, err := scaler.KCluster.GetUnschedulableResources()
-	if err != nil {
-		logger.ErrorLog.Fatalf("Unable to get unschedulable resources: %s", err.Error())
-	}
-
-	requiredScaleEvents := scaler.requiredScaleEvents(unschedulableResources, queuedEvents)
-
-	scaler.selectTargetPHosts(requiredScaleEvents)
-
-	return requiredScaleEvents
-
-	// go scaler.cleanUpEmptyNodes()
-
-	// 	go scaler.cleanUpStoppedNodes()
-
-	// go scaler.removeUnbackedNodes()
-	// // TODO cleanup orphaned VMs
-}
-
-func (scaler *Scaler) requiredScaleEvents(requiredResources *kubernetes.UnschedulableResources, queuedEvents *int) []*ScaleEvent {
+func (scaler *Scaler) RequiredScaleEvents(requiredResources *kubernetes.UnschedulableResources, currentEvents int) []*ScaleEvent {
 	requiredScaleEvents := []*ScaleEvent{}
 	var numCpuNodesRequired int
 	var numMemoryNodesRequired int
 
 	if requiredResources.Cpu != 0 {
-		expectedCpu := float64(scaler.Config.KpNodeCores) * float64(*queuedEvents)
+		expectedCpu := float64(scaler.Config.KpNodeCores) * float64(currentEvents)
 		unaccountedCpu := requiredResources.Cpu - expectedCpu
 		numCpuNodesRequired = int(math.Ceil(unaccountedCpu / float64(scaler.Config.KpNodeCores)))
 	}
 
 	if requiredResources.Memory != 0 {
-		expectedMemory := int64(scaler.Config.KpNodeMemory<<20) * (int64(*queuedEvents))
+		expectedMemory := int64(scaler.Config.KpNodeMemory<<20) * (int64(currentEvents))
 		unaccountedMemory := requiredResources.Memory - expectedMemory
 		numMemoryNodesRequired = int(math.Ceil(float64(unaccountedMemory) / float64(scaler.Config.KpNodeMemory<<20)))
 	}
@@ -112,13 +93,13 @@ func (scaler *Scaler) requiredScaleEvents(requiredResources *kubernetes.Unschedu
 		requiredScaleEvents = append(requiredScaleEvents, requiredEvent)
 	}
 
-	if len(requiredScaleEvents) == 0 && *queuedEvents == 0 {
-		schedulingFailed, err := scaler.KCluster.GetFailedSchedulingDueToControlPlaneTaint()
+	if len(requiredScaleEvents) == 0 && currentEvents == 0 {
+		schedulingFailed, err := scaler.KCluster.IsFailedSchedulingDueToControlPlaneTaint()
 		if err != nil {
 			logger.WarningLog.Printf("Could not get pods: %s", err.Error())
 		}
 
-		if schedulingFailed == true {
+		if schedulingFailed {
 			newName := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
 			requiredEvent := &ScaleEvent{
 				ScaleType:  1,
@@ -132,7 +113,7 @@ func (scaler *Scaler) requiredScaleEvents(requiredResources *kubernetes.Unschedu
 	return requiredScaleEvents
 }
 
-func (scaler *Scaler) selectTargetPHosts(scaleEvents []*ScaleEvent) {
+func (scaler *Scaler) SelectTargetPHosts(scaleEvents []*ScaleEvent) {
 	pHosts := scaler.PCluster.GetClusterStats()
 	kpNodes := scaler.PCluster.GetRunningKpNodes()
 
@@ -168,8 +149,6 @@ selected:
 
 		scaleEvent.TargetPHost = maxAvailMemNode
 	}
-
-	return
 }
 
 func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
@@ -179,7 +158,7 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 
 	errchan := make(chan error)
 
-	pctx, cancelPCtx := context.WithTimeout(ctx, time.Duration(20*time.Second))
+	pctx, cancelPCtx := context.WithTimeout(ctx, time.Duration(time.Second*20))
 	defer cancelPCtx()
 
 	go scaler.PCluster.NewKpNode(
@@ -196,7 +175,7 @@ ptimeout:
 	select {
 	case <-pctx.Done():
 		cancelPCtx()
-		return fmt.Errorf("Timed out waiting for %s to start", scaleEvent.KpNodeName)
+		return fmt.Errorf("timed out waiting for %s to start", scaleEvent.KpNodeName)
 
 	case err := <-errchan:
 		return err
@@ -209,7 +188,7 @@ ptimeout:
 	logger.InfoLog.Printf("Waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
 	// TODO: Add wait for join config variable
-	kctx, cancelKCtx := context.WithTimeout(ctx, time.Duration(60*time.Second))
+	kctx, cancelKCtx := context.WithTimeout(ctx, time.Duration(time.Second*60))
 	defer cancelKCtx()
 
 	go scaler.KCluster.WaitForJoin(
@@ -222,7 +201,7 @@ ktimeout:
 	select {
 	case <-kctx.Done():
 		cancelKCtx()
-		return fmt.Errorf("Timed out waiting for %s to join kcluster", scaleEvent.KpNodeName)
+		return fmt.Errorf("timed out waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
 	case <-ok:
 		break ktimeout
@@ -234,7 +213,7 @@ ktimeout:
 }
 
 func (scaler *Scaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
-	err := scaler.KCluster.SlowDeleteKpNode(scaleEvent.KpNodeName)
+	err := scaler.KCluster.DeleteKpNode(scaleEvent.KpNodeName)
 	if err != nil {
 		return err
 	}
@@ -316,75 +295,46 @@ func (scaler *Scaler) DeleteKpNode(kpNodeName string) error {
 // 	}
 // }
 
-func (scaler *Scaler) AssessScaleDown() *ScaleEvent {
-	allocatedResources, err := scaler.KCluster.GetKpNodesAllocatedResources()
-	if err != nil {
-		logger.WarningLog.Printf("Consider scale down failed, unable to get allocated resources: %s", err.Error())
-		return &ScaleEvent{}
-	}
-
-	numKpNodes := scaler.NumKpNodes()
-
+func (scaler *Scaler) AssessScaleDown(allocatedResources map[string]*kubernetes.AllocatedResources, numKpNodes int) *ScaleEvent {
 	totalCpuAllocatable := scaler.Config.KpNodeCores * numKpNodes
 	totalMemoryAllocatable := scaler.Config.KpNodeMemory << 20 * numKpNodes
 
-	var totalCpuAllocated float64
+	var currentCpuAllocated float64
 	for _, kpNode := range allocatedResources {
-		totalCpuAllocated += kpNode.Cpu
+		currentCpuAllocated += kpNode.Cpu
 	}
 
-	var totalMemoryAllocated float64
+	var currentMemoryAllocated float64
 	for _, kpNode := range allocatedResources {
-		totalMemoryAllocated += kpNode.Memory
+		currentMemoryAllocated += kpNode.Memory
 	}
 
-	loadHeadroom := scaler.Config.KpLoadHeadroom
-	if loadHeadroom < 0.2 {
-		loadHeadroom = 0.2
-	}
-	numKpNodesAfterScaleDown := numKpNodes - 1
+	acceptCpuScaleDown := scaler.assessScaleDownForResourceType(currentCpuAllocated, totalCpuAllocatable, numKpNodes)
+	acceptMemoryScaleDown := scaler.assessScaleDownForResourceType(currentMemoryAllocated, totalMemoryAllocatable, numKpNodes)
 
-	acceptCpuScaleDown := true
-	acceptMemoryScaleDown := true
-
-	if totalCpuAllocated != 0 {
-		totalCpuLoad := totalCpuAllocated / float64(totalCpuAllocatable)
-		acceptableCpuLoadForScaleDown := (float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
-			(totalCpuLoad * loadHeadroom)
-		if totalCpuLoad > acceptableCpuLoadForScaleDown {
-			acceptCpuScaleDown = false
+	if (acceptCpuScaleDown && acceptMemoryScaleDown) {
+		scaleEvent := ScaleEvent{
+			ScaleType: -1,
 		}
-	}
-
-	if totalMemoryAllocated != 0 {
-		totalMemoryLoad := totalMemoryAllocated / float64(totalMemoryAllocatable)
-		acceptableMemoryLoadForScaleDown := (float64(numKpNodesAfterScaleDown) / float64(numKpNodes)) -
-			(totalMemoryLoad * loadHeadroom)
-		if totalMemoryLoad > acceptableMemoryLoadForScaleDown {
-			acceptMemoryScaleDown = false
-		}
-	}
-
-	scaleEvent := ScaleEvent{}
-
-	if acceptCpuScaleDown && acceptMemoryScaleDown {
-		scaleEvent.ScaleType = -1
-		scaler.selectScaleDownTarget(&scaleEvent, allocatedResources)
-	}
-
-	if scaleEvent != (ScaleEvent{}) {
 		return &scaleEvent
-	} else {
-		return nil
 	}
+
+	return nil
 }
 
-func (scaler *Scaler) selectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources) {
-	kpNodes, err := scaler.KCluster.GetKpNodes()
-	if err != nil {
-		logger.WarningLog.Printf("Consider scale down failed, unable get kp-nodes: %s", err.Error())
+func (scaler *Scaler) assessScaleDownForResourceType(currentResourceAllocated float64, totalResourceAllocatable int, numKpNodes int) bool {
+	if currentResourceAllocated == 0 {
+		return false
 	}
 
+	totalResourceLoad := currentResourceAllocated / float64(totalResourceAllocatable)
+	acceptableResourceLoadForScaleDown := (float64(numKpNodes-1) / float64(numKpNodes)) -
+		(totalResourceLoad * scaler.Config.KpLoadHeadroom)
+
+	return totalResourceLoad < acceptableResourceLoadForScaleDown
+}
+
+func (scaler *Scaler) SelectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources, kpNodes []apiv1.Node) {
 	if scaleEvent.ScaleType != 0 {
 		kpNodeLoads := make(map[string]float64)
 

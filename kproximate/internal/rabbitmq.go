@@ -65,7 +65,27 @@ func DeclareQueue(ch *amqp.Channel, queueName string) *amqp.Queue {
 	return &q
 }
 
-func GetUnackedMessages(client *http.Client, rabbitMQHost string, rabbitMQUser string, rabbitMQPassword string, queueName string) int {
+func GetQueueState(ch *amqp.Channel, queueName string) int {
+	args := amqp.Table{
+		"x-queue-type":     "quorum",
+		"x-delivery-limit": 2,
+	}
+	scaleEvents, err := ch.QueueDeclarePassive(
+		queueName,
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		args,  // arguments
+	)
+	if err != nil {
+		logger.ErrorLog.Fatalf("Failed to find queue length: %s", err)
+	}
+
+	return scaleEvents.Messages
+}
+
+func GetUnAckedMessages(client *http.Client, rabbitMQHost string, rabbitMQUser string, rabbitMQPassword string, queueName string) int {
 	endpoint := fmt.Sprintf("http://%s:15672/api/queues/%s/%s", rabbitMQHost, url.PathEscape("/"), queueName)
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
