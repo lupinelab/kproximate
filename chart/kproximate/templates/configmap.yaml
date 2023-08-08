@@ -16,3 +16,4 @@ data:
   rabbitMQHost: {{ .Values.kproximate.rabbitMQHost | quote }}
   rabbitMQPort: {{ .Values.kproximate.rabbitMQPort | quote }}
   rabbitMQUser: {{ .Values.rabbitmq.auth.username | quote }}
+  waitSecondsForJoin: {{ .Values.kproximate.waitSecondsForJoin | quote }}

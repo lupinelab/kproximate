@@ -9,7 +9,6 @@ import (
 )
 
 type Config struct {
-	EmptyGraceSecondsAfterCreation int     `env:"emptyGraceSecondsAfterCreation"`
 	KpNodeCores                    int     `env:"kpNodeCores"`
 	KpLoadHeadroom                 float64 `env:"kpLoadHeadroom"`
 	KpNodeMemory                   int     `env:"kpNodeMemory"`
@@ -29,6 +28,7 @@ type Config struct {
 	RabbitMQPort                   int    `env:"rabbitMQPort"`
 	RabbitMQUser                   string `env:"rabbitMQUser"`
 	SshKey                         string `env:"sshKey"`
+	WaitSecondsForJoin			   int    `env:"waitSecondsForJoin"`
 }
 
 func GetConfig() *Config {
@@ -47,6 +47,14 @@ func GetConfig() *Config {
 func validateConfig(config *Config) Config {
 	if config.KpLoadHeadroom < 0.2 {
 		config.KpLoadHeadroom = 0.2
+	}
+
+	if config.PollInterval < 10 {
+		config.PollInterval = 10
+	}
+
+	if config.WaitSecondsForJoin < 60 {
+		config.WaitSecondsForJoin = 60
 	}
 	return *config
 }

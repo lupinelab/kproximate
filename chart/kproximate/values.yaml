@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 
 kproximate:
-  emptyGraceSecondsAfterCreation: 120
+  waitSecondsForJoin: 120
   kpLoadHeadroom: 0.2
   kpNodeCores: 2
   kpNodeMemory: 2048

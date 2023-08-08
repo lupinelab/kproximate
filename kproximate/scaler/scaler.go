@@ -188,7 +188,14 @@ ptimeout:
 	logger.InfoLog.Printf("Waiting for %s to join kcluster", scaleEvent.KpNodeName)
 
 	// TODO: Add wait for join config variable
-	kctx, cancelKCtx := context.WithTimeout(ctx, time.Duration(time.Second*60))
+	kctx, cancelKCtx := context.WithTimeout(
+		ctx,
+		time.Duration(
+			time.Second*time.Duration(
+				scaler.Config.WaitSecondsForJoin,
+			),
+		),
+	)
 	defer cancelKCtx()
 
 	go scaler.KCluster.WaitForJoin(
@@ -312,7 +319,7 @@ func (scaler *Scaler) AssessScaleDown(allocatedResources map[string]*kubernetes.
 	acceptCpuScaleDown := scaler.assessScaleDownForResourceType(currentCpuAllocated, totalCpuAllocatable, numKpNodes)
 	acceptMemoryScaleDown := scaler.assessScaleDownForResourceType(currentMemoryAllocated, totalMemoryAllocatable, numKpNodes)
 
-	if (acceptCpuScaleDown && acceptMemoryScaleDown) {
+	if acceptCpuScaleDown && acceptMemoryScaleDown {
 		scaleEvent := ScaleEvent{
 			ScaleType: -1,
 		}

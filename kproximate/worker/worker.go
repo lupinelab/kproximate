@@ -91,16 +91,18 @@ func consumeScaleUpMsgs(kpScaler *scaler.Scaler, scaleUpMsgs <-chan amqp.Deliver
 		if scaleUpMsg.Redelivered {
 			kpScaler.DeleteKpNode(scaleUpEvent.KpNodeName)
 			logger.InfoLog.Printf("Retrying scale up event: %s", scaleUpEvent.KpNodeName)
+		} else {
+			logger.InfoLog.Printf("Triggered scale up event: %s", scaleUpEvent.KpNodeName)
 		}
 
-		logger.InfoLog.Printf("Triggered scale up event: %s", scaleUpEvent.KpNodeName)
 		ctx := context.Background()
 		err := kpScaler.ScaleUp(ctx, scaleUpEvent)
 
 		if err != nil {
-			logger.WarningLog.Printf("Scale up event failed:, %s", err.Error())
+			logger.WarningLog.Printf("Scale up event failed: %s", err.Error())
 			kpScaler.DeleteKpNode(scaleUpEvent.KpNodeName)
 			scaleUpMsg.Reject(true)
+			continue
 		}
 
 		scaleUpMsg.Ack(false)
@@ -114,15 +116,17 @@ func consumeScaleDownMsgs(kpScaler *scaler.Scaler, scaleDownMsgs <-chan amqp.Del
 
 		if scaleDownMsg.Redelivered {
 			logger.InfoLog.Printf("Retrying scale down event: %s", scaleDownEvent.KpNodeName)
+		} else {
+			logger.InfoLog.Printf("Triggered scale down event: %s", scaleDownEvent.KpNodeName)
 		}
 
-		logger.InfoLog.Printf("Triggered scale down event: %s", scaleDownEvent.KpNodeName)
 		ctx := context.Background()
 		err := kpScaler.ScaleDown(ctx, scaleDownEvent)
 
 		if err != nil {
-			logger.WarningLog.Printf("Scale down event failed:, %s", err.Error())
+			logger.WarningLog.Printf("Scale down event failed: %s", err.Error())
 			scaleDownMsg.Reject(true)
+			continue
 		}
 
 		scaleDownMsg.Ack(false)
