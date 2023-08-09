@@ -8,31 +8,34 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
-type Config struct {
-	KpNodeCores                    int     `env:"kpNodeCores"`
-	KpLoadHeadroom                 float64 `env:"kpLoadHeadroom"`
-	KpNodeMemory                   int     `env:"kpNodeMemory"`
-	KpNodeParams                   map[string]interface{}
-	KpNodeTemplateConfig           kproxmox.VMConfig
-	KpNodeTemplateName             string `env:"kpNodeTemplateName"`
-	KpNodeTemplateRef              proxmox.VmRef
-	MaxKpNodes                     int    `env:"maxKpNodes"`
-	PmAllowInsecure                bool   `env:"pmAllowInsecure"`
-	PmDebug                        bool   `env:"pmDebug"`
-	PmToken                        string `env:"pmToken"`
-	PmUrl                          string `env:"pmUrl"`
-	PmUserID                       string `env:"pmUserID"`
-	PollInterval                   int    `env:"pollInterval"`
-	RabbitMQHost                   string `env:"rabbitMQHost"`
-	RabbitMQPassword               string `env:"rabbitMQPassword"`
-	RabbitMQPort                   int    `env:"rabbitMQPort"`
-	RabbitMQUser                   string `env:"rabbitMQUser"`
-	SshKey                         string `env:"sshKey"`
-	WaitSecondsForJoin			   int    `env:"waitSecondsForJoin"`
+type KproximateConfig struct {
+	KpNodeCores          int     `env:"kpNodeCores"`
+	KpLoadHeadroom       float64 `env:"kpLoadHeadroom"`
+	KpNodeMemory         int     `env:"kpNodeMemory"`
+	KpNodeParams         map[string]interface{}
+	KpNodeTemplateConfig kproxmox.VMConfig
+	KpNodeTemplateName   string `env:"kpNodeTemplateName"`
+	KpNodeTemplateRef    proxmox.VmRef
+	MaxKpNodes           int    `env:"maxKpNodes"`
+	PmAllowInsecure      bool   `env:"pmAllowInsecure"`
+	PmDebug              bool   `env:"pmDebug"`
+	PmToken              string `env:"pmToken"`
+	PmUrl                string `env:"pmUrl"`
+	PmUserID             string `env:"pmUserID"`
+	PollInterval         int    `env:"pollInterval"`
+	SshKey               string `env:"sshKey"`
+	WaitSecondsForJoin   int    `env:"waitSecondsForJoin"`
 }
 
-func GetConfig() *Config {
-	config := &Config{}
+type RabbitConfig struct {
+	Host     string `env:"rabbitMQHost"`
+	Password string `env:"rabbitMQPassword"`
+	Port     int    `env:"rabbitMQPort"`
+	User     string `env:"rabbitMQUser"`
+}
+
+func GetKpConfig() *KproximateConfig {
+	config := &KproximateConfig{}
 
 	err := envconfig.Process(context.Background(), config)
 	if err != nil {
@@ -44,7 +47,18 @@ func GetConfig() *Config {
 	return config
 }
 
-func validateConfig(config *Config) Config {
+func GetRabbitConfig() *RabbitConfig {
+	config := &RabbitConfig{}
+
+	err := envconfig.Process(context.Background(), config)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return config
+}
+
+func validateConfig(config *KproximateConfig) KproximateConfig {
 	if config.KpLoadHeadroom < 0.2 {
 		config.KpLoadHeadroom = 0.2
 	}

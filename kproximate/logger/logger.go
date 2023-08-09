@@ -17,8 +17,8 @@ func init() {
 	if err != nil {
 		log.Panicf("Could not get worker name: %s", err)
 	}
-	
-	InfoLog = log.New(os.Stdout, fmt.Sprintf("%s INFO: ", controllerName), log.Ldate|log.Ltime)
-	WarningLog = log.New(os.Stdout, fmt.Sprintf("%s WARNING: ", controllerName), log.Ldate|log.Ltime)
-	ErrorLog = log.New(os.Stdout, fmt.Sprintf("%s ERROR: ", controllerName), log.Ldate|log.Ltime)
+
+	InfoLog = log.New(os.Stdout, fmt.Sprintf("INFO: %s", controllerName), log.Ldate|log.Ltime)
+	WarningLog = log.New(os.Stdout, fmt.Sprintf("WARNING: %s", controllerName), log.Ldate|log.Ltime)
+	ErrorLog = log.New(os.Stdout, fmt.Sprintf("ERROR: %s", controllerName), log.Ldate|log.Ltime)
 }

@@ -18,7 +18,7 @@ func TestRequiredScaleEventsFor1CPU(t *testing.T) {
 	}
 
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
 			KpNodeTemplateConfig: kproxmox.VMConfig{
@@ -45,7 +45,7 @@ func TestRequiredScaleEventsFor3CPU(t *testing.T) {
 	}
 
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
 			KpNodeTemplateConfig: kproxmox.VMConfig{
@@ -72,7 +72,7 @@ func TestRequiredScaleEventsFor1024MBMemory(t *testing.T) {
 	}
 
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
 			KpNodeTemplateConfig: kproxmox.VMConfig{
@@ -99,7 +99,7 @@ func TestRequiredScaleEventsFor3072MBMemory(t *testing.T) {
 	}
 
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
 			KpNodeTemplateConfig: kproxmox.VMConfig{
@@ -126,7 +126,7 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory(t *testing.T) {
 	}
 
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
 			KpNodeTemplateConfig: kproxmox.VMConfig{
@@ -153,7 +153,7 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory1QueuedEvent(t *testing.T) {
 	}
 
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
 			KpNodeTemplateConfig: kproxmox.VMConfig{
@@ -214,7 +214,7 @@ func TestSelectTargetPHosts(t *testing.T) {
 
 func TestAssessScaleDownForResourceTypeZeroLoad(t *testing.T) {
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpLoadHeadroom: 0.2,
 		},
 	}
@@ -227,7 +227,7 @@ func TestAssessScaleDownForResourceTypeZeroLoad(t *testing.T) {
 
 func TestAssessScaleDownForResourceTypeAcceptable(t *testing.T) {
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpLoadHeadroom: 0.2,
 		},
 	}
@@ -240,7 +240,7 @@ func TestAssessScaleDownForResourceTypeAcceptable(t *testing.T) {
 
 func TestAssessScaleDownForResourceTypeUnAcceptable(t *testing.T) {
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpLoadHeadroom: 0.2,
 		},
 	}
@@ -252,7 +252,7 @@ func TestAssessScaleDownForResourceTypeUnAcceptable(t *testing.T) {
 
 func TestSelectScaleDownTarget(t *testing.T) {
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 1024,
 		},
@@ -298,7 +298,7 @@ func TestSelectScaleDownTarget(t *testing.T) {
 
 func TestAssessScaleDownIsAcceptable(t *testing.T) {
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 1024,
 		},
@@ -328,7 +328,7 @@ func TestAssessScaleDownIsAcceptable(t *testing.T) {
 
 func TestAssessScaleDownIsUnacceptable(t *testing.T) {
 	s := Scaler{
-		Config: config.Config{
+		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
 		},
@@ -358,7 +358,7 @@ func TestAssessScaleDownIsUnacceptable(t *testing.T) {
 	}
 
 	numKpNodes := len(allocatedResources)
-	
+
 	if s.AssessScaleDown(allocatedResources, numKpNodes) != nil {
 		t.Errorf("AssessScaleDown did not return nil")
 	}

@@ -14,26 +14,22 @@ import (
 )
 
 func main() {
-	config := config.GetConfig()
-	kpScaler := scaler.NewScaler(config)
+	kpConfig := config.GetKpConfig()
+	kpScaler := scaler.NewScaler(kpConfig)
 
-	conn, mgmtClient := internal.NewRabbitmqConnection(
-		kpScaler.Config.RabbitMQHost,
-		kpScaler.Config.RabbitMQPort,
-		kpScaler.Config.RabbitMQUser,
-		kpScaler.Config.RabbitMQPassword,
-	)
+	rabbitConfig := config.GetRabbitConfig()
+	conn, mgmtClient := internal.NewRabbitmqConnection(rabbitConfig)
 	defer conn.Close()
 
 	scaleUpChannel := internal.NewChannel(conn)
 	defer scaleUpChannel.Close()
 	scaleUpQueue := internal.DeclareQueue(scaleUpChannel, "scaleUpEvents")
-	go AssessScaleUp(kpScaler, scaleUpChannel, scaleUpQueue, mgmtClient)
+	go AssessScaleUp(kpScaler, rabbitConfig, scaleUpChannel, scaleUpQueue, mgmtClient)
 
 	scaleDownChannel := internal.NewChannel(conn)
 	defer scaleDownChannel.Close()
 	scaleDownQueue := internal.DeclareQueue(scaleDownChannel, "scaleDownEvents")
-	go AssessScaleDown(kpScaler, scaleDownChannel, scaleDownQueue, mgmtClient)
+	go AssessScaleDown(kpScaler, rabbitConfig, scaleDownChannel, scaleDownQueue, mgmtClient)
 
 	logger.InfoLog.Println("Controller started")
 
@@ -41,10 +37,10 @@ func main() {
 	<-forever
 }
 
-func AssessScaleUp(scaler *scaler.Scaler, scaleUpChannel *amqp.Channel, scaleUpQueue *amqp.Queue, mgmtClient *http.Client) {
+func AssessScaleUp(scaler *scaler.Scaler, rabbitConfig *config.RabbitConfig, scaleUpChannel *amqp.Channel, scaleUpQueue *amqp.Queue, mgmtClient *http.Client) {
 	for {
 		pendingScaleUpEvents := scaleUpQueue.Messages
-		runningScaleUpEvents := internal.GetUnAckedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, scaleUpQueue.Name)
+		runningScaleUpEvents := internal.GetUnAckedMessages(mgmtClient, rabbitConfig, scaleUpQueue.Name)
 		allScaleUpEvents := pendingScaleUpEvents + runningScaleUpEvents
 
 		if scaler.NumKpNodes()+allScaleUpEvents < scaler.Config.MaxKpNodes {
@@ -76,20 +72,20 @@ func AssessScaleUp(scaler *scaler.Scaler, scaleUpChannel *amqp.Channel, scaleUpQ
 	}
 }
 
-func AssessScaleDown(scaler *scaler.Scaler, scaleDownChannel *amqp.Channel, scaleDownQueue *amqp.Queue, mgmtClient *http.Client) {
+func AssessScaleDown(scaler *scaler.Scaler, rabbitConfig *config.RabbitConfig, scaleDownChannel *amqp.Channel, scaleDownQueue *amqp.Queue, mgmtClient *http.Client) {
 	for {
 		pendingScaleUpEvents := internal.GetQueueState(scaleDownChannel, "scaleUpEvents")
-		runningScaleUpEvents := internal.GetUnAckedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, "scaleUpEvents")
+		runningScaleUpEvents := internal.GetUnAckedMessages(mgmtClient, rabbitConfig, "scaleUpEvents")
 		allScaleUpEvents := pendingScaleUpEvents + runningScaleUpEvents
 
 		pendingScaleDownEvents := scaleDownQueue.Messages
-		runningScaleDownEvents := internal.GetUnAckedMessages(mgmtClient, scaler.Config.RabbitMQHost, scaler.Config.RabbitMQUser, scaler.Config.RabbitMQPassword, scaleDownQueue.Name)
+		runningScaleDownEvents := internal.GetUnAckedMessages(mgmtClient, rabbitConfig, scaleDownQueue.Name)
 		allScaleDownEvents := pendingScaleDownEvents + runningScaleDownEvents
 
 		allEvents := allScaleUpEvents + allScaleDownEvents
 		numKpNodes := scaler.NumKpNodes()
 
-		if (allEvents == 0 && numKpNodes > 0) {
+		if allEvents == 0 && numKpNodes > 0 {
 			allocatedResources, err := scaler.KCluster.GetAllocatedResources()
 			if err != nil {
 				logger.ErrorLog.Fatalf("Unable to get allocated resources: %s", err.Error())

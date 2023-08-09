@@ -12,15 +12,11 @@ import (
 )
 
 func main() {
-	config := config.GetConfig()
-	kpScaler := scaler.NewScaler(config)
+	kpConfig := config.GetKpConfig()
+	kpScaler := scaler.NewScaler(kpConfig)
 
-	conn, _ := internal.NewRabbitmqConnection(
-		kpScaler.Config.RabbitMQHost,
-		kpScaler.Config.RabbitMQPort,
-		kpScaler.Config.RabbitMQUser,
-		kpScaler.Config.RabbitMQPassword,
-	)
+	rabbitConfig := config.GetRabbitConfig()
+	conn, _ := internal.NewRabbitmqConnection(rabbitConfig)
 	defer conn.Close()
 
 	scaleUpChannel := internal.NewChannel(conn)

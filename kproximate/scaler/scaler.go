@@ -17,7 +17,7 @@ import (
 )
 
 type Scaler struct {
-	Config   config.Config
+	Config   config.KproximateConfig
 	KCluster kubernetes.Kubernetes
 	PCluster kproxmox.Proxmox
 }
@@ -28,7 +28,7 @@ type ScaleEvent struct {
 	TargetPHost kproxmox.PHostInformation
 }
 
-func NewScaler(config *config.Config) *Scaler {
+func NewScaler(config *config.KproximateConfig) *Scaler {
 	kClient := kubernetes.NewKubernetesClient()
 	pClient := kproxmox.NewProxmoxClient(config.PmUrl, config.PmAllowInsecure, config.PmUserID, config.PmToken, config.PmDebug)
 

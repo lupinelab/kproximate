@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/lupinelab/kproximate/config"
 	"github.com/lupinelab/kproximate/logger"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -15,10 +16,10 @@ type queueInfo struct {
 	MessagesUnacknowledged int `json:"messages_unacknowledged,omitempty"`
 }
 
-func NewRabbitmqConnection(rabbitMQHost string, rabbitMQPort int, rabbitMQUser string, rabbitMQPassword string) (*amqp.Connection, *http.Client) {
+func NewRabbitmqConnection(rabbitConfig *config.RabbitConfig) (*amqp.Connection, *http.Client) {
 	tls := &tls.Config{InsecureSkipVerify: true}
 
-	rabbitMQUrl := fmt.Sprintf("amqps://%s:%s@%s:%d/", rabbitMQUser, rabbitMQPassword, rabbitMQHost, rabbitMQPort)
+	rabbitMQUrl := fmt.Sprintf("amqps://%s:%s@%s:%d/", rabbitConfig.User, rabbitConfig.Password, rabbitConfig.Host, rabbitConfig.Port)
 
 	conn, err := amqp.DialTLS(rabbitMQUrl, tls)
 	if err != nil {
@@ -85,15 +86,15 @@ func GetQueueState(ch *amqp.Channel, queueName string) int {
 	return scaleEvents.Messages
 }
 
-func GetUnAckedMessages(client *http.Client, rabbitMQHost string, rabbitMQUser string, rabbitMQPassword string, queueName string) int {
-	endpoint := fmt.Sprintf("http://%s:15672/api/queues/%s/%s", rabbitMQHost, url.PathEscape("/"), queueName)
+func GetUnAckedMessages(client *http.Client, rabbitConfig *config.RabbitConfig, queueName string) int {
+	endpoint := fmt.Sprintf("http://%s:15672/api/queues/%s/%s", rabbitConfig.Host, url.PathEscape("/"), queueName)
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		logger.ErrorLog.Fatalf("Could not build queue query: %s", err.Error())
 	}
 
 	req.Close = true
-	req.SetBasicAuth(rabbitMQUser, rabbitMQPassword)
+	req.SetBasicAuth(rabbitConfig.User, rabbitConfig.Password)
 
 	res, err := client.Do(req)
 	if err != nil {

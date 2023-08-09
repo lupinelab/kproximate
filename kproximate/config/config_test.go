@@ -5,9 +5,9 @@ import (
 )
 
 func TestValidateConfig(t *testing.T) {
-	cfg := &Config{
-		KpLoadHeadroom: 0.1,
-		PollInterval: 5,
+	cfg := &KproximateConfig{
+		KpLoadHeadroom:     0.1,
+		PollInterval:       5,
 		WaitSecondsForJoin: 30,
 	}
 
