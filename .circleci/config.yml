@@ -53,6 +53,7 @@ jobs:
       - image: cimg/base:current
     steps:
       - setup_helm
+      - checkout
       - run:
           name: Package the helm chart
           command: helm package chart/kproximate/ --version $CIRCLE_TAG
