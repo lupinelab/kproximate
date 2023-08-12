@@ -1,14 +1,13 @@
 package scaler
 
 import (
-	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/lupinelab/kproximate/config"
 	"github.com/lupinelab/kproximate/kubernetes"
-	kproxmox "github.com/lupinelab/kproximate/proxmox"
+	"github.com/lupinelab/kproximate/proxmox"
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 func TestRequiredScaleEventsFor1CPU(t *testing.T) {
@@ -21,17 +20,16 @@ func TestRequiredScaleEventsFor1CPU(t *testing.T) {
 		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
-			KpNodeTemplateConfig: kproxmox.VMConfig{
-				Cores:  2,
-				Memory: 2048,
-			},
-			MaxKpNodes: 3,
+			MaxKpNodes:   3,
 		},
 	}
 
 	currentEvents := 0
 
-	requiredScaleEvents := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 
 	if len(requiredScaleEvents) != 1 {
 		t.Errorf("Expected exactly 1 scaleEvent, got: %d", len(requiredScaleEvents))
@@ -48,17 +46,16 @@ func TestRequiredScaleEventsFor3CPU(t *testing.T) {
 		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
-			KpNodeTemplateConfig: kproxmox.VMConfig{
-				Cores:  2,
-				Memory: 2048,
-			},
-			MaxKpNodes: 3,
+			MaxKpNodes:   3,
 		},
 	}
 
 	currentEvents := 0
 
-	requiredScaleEvents := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 
 	if len(requiredScaleEvents) != 2 {
 		t.Errorf("Expected exactly 2 scaleEvents, got: %d", len(requiredScaleEvents))
@@ -75,17 +72,16 @@ func TestRequiredScaleEventsFor1024MBMemory(t *testing.T) {
 		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
-			KpNodeTemplateConfig: kproxmox.VMConfig{
-				Cores:  2,
-				Memory: 2048,
-			},
-			MaxKpNodes: 3,
+			MaxKpNodes:   3,
 		},
 	}
 
 	currentEvents := 0
 
-	requiredScaleEvents := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 
 	if len(requiredScaleEvents) != 1 {
 		t.Errorf("Expected exactly 1 scaleEvent, got: %d", len(requiredScaleEvents))
@@ -102,17 +98,16 @@ func TestRequiredScaleEventsFor3072MBMemory(t *testing.T) {
 		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
-			KpNodeTemplateConfig: kproxmox.VMConfig{
-				Cores:  2,
-				Memory: 2048,
-			},
-			MaxKpNodes: 3,
+			MaxKpNodes:   3,
 		},
 	}
 
 	currentEvents := 0
 
-	requiredScaleEvents := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 
 	if len(requiredScaleEvents) != 2 {
 		t.Errorf("Expected exactly 2 scaleEvent, got: %d", len(requiredScaleEvents))
@@ -129,17 +124,16 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory(t *testing.T) {
 		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
-			KpNodeTemplateConfig: kproxmox.VMConfig{
-				Cores:  2,
-				Memory: 2048,
-			},
-			MaxKpNodes: 3,
+			MaxKpNodes:   3,
 		},
 	}
 
 	currentEvents := 0
 
-	requiredScaleEvents := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 
 	if len(requiredScaleEvents) != 2 {
 		t.Errorf("Expected exactly 2 scaleEvent, got: %d", len(requiredScaleEvents))
@@ -156,59 +150,58 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory1QueuedEvent(t *testing.T) {
 		Config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
-			KpNodeTemplateConfig: kproxmox.VMConfig{
-				Cores:  2,
-				Memory: 2048,
-			},
-			MaxKpNodes: 3,
+			MaxKpNodes:   3,
 		},
 	}
 
 	currentEvents := 1
 
-	requiredScaleEvents := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(&unschedulableResources, currentEvents)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 
 	if len(requiredScaleEvents) != 1 {
 		t.Errorf("Expected exactly 1 scaleEvent, got: %d", len(requiredScaleEvents))
 	}
 }
 
-func TestSelectTargetPHosts(t *testing.T) {
+func TestSelectTargetHosts(t *testing.T) {
 	s := Scaler{
-		PCluster: &kproxmox.ProxmoxMockClient{},
+		Proxmox: &proxmox.ProxmoxMockClient{},
+		Config: config.KproximateConfig{
+			KpNodeNameRegex:  regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`),
+			KpNodeNamePrefix: "kp-node",
+		},
 	}
-
-	newName1 := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
-	newName2 := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
-	newName3 := fmt.Sprintf("kp-node-%s", uuid.NewUUID())
 
 	scaleEvents := []*ScaleEvent{
 		{
-			ScaleType:  1,
-			KpNodeName: newName1,
+			ScaleType: 1,
+			NodeName:  s.newKpNodeName(),
 		},
 		{
-			ScaleType:  1,
-			KpNodeName: newName2,
+			ScaleType: 1,
+			NodeName:  s.newKpNodeName(),
 		},
 		{
-			ScaleType:  1,
-			KpNodeName: newName3,
+			ScaleType: 1,
+			NodeName:  s.newKpNodeName(),
 		},
 	}
 
-	s.SelectTargetPHosts(scaleEvents)
+	s.SelectTargetHosts(scaleEvents)
 
-	if scaleEvents[0].TargetPHost.Id != "node/host-01" {
-		t.Errorf("Expected node/host-01 to be selected as target pHost, got: %s", scaleEvents[0].TargetPHost.Id)
+	if scaleEvents[0].TargetHost.Node != "host-01" {
+		t.Errorf("Expected host-01 to be selected as target host got %s", scaleEvents[0].TargetHost.Node)
 	}
 
-	if scaleEvents[1].TargetPHost.Id != "node/host-02" {
-		t.Errorf("Expected node/host-02 to be selected as target pHost, got: %s", scaleEvents[1].TargetPHost.Id)
+	if scaleEvents[1].TargetHost.Node != "host-02" {
+		t.Errorf("Expected host-02 to be selected as target host, got %s", scaleEvents[1].TargetHost.Node)
 	}
 
-	if scaleEvents[2].TargetPHost.Id != "node/host-03" {
-		t.Errorf("Expected node/host-03 to be selected as target pHost, got: %s", scaleEvents[2].TargetPHost.Id)
+	if scaleEvents[2].TargetHost.Node != "host-03" {
+		t.Errorf("Expected host-03 to be selected as target host, got %s", scaleEvents[2].TargetHost.Node)
 	}
 }
 
@@ -291,8 +284,8 @@ func TestSelectScaleDownTarget(t *testing.T) {
 
 	s.SelectScaleDownTarget(&scaleEvent, allocatedResources, kpNodes)
 
-	if scaleEvent.KpNodeName != "kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38" {
-		t.Errorf("kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38 but got %s", scaleEvent.KpNodeName)
+	if scaleEvent.NodeName != "kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38" {
+		t.Errorf("Expected kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38 but got %s", scaleEvent.NodeName)
 	}
 }
 
@@ -300,22 +293,22 @@ func TestAssessScaleDownIsAcceptable(t *testing.T) {
 	s := Scaler{
 		Config: config.KproximateConfig{
 			KpNodeCores:  2,
-			KpNodeMemory: 1024,
+			KpNodeMemory: 2048,
 		},
 	}
 
 	allocatedResources := map[string]*kubernetes.AllocatedResources{
 		"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
 			Cpu:    1.0,
-			Memory: 2048.0,
+			Memory: 1073741824.0,
 		},
 		"kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a": {
 			Cpu:    1.0,
-			Memory: 2048.0,
+			Memory: 1073741824.0,
 		},
 		"kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38": {
 			Cpu:    1.0,
-			Memory: 1048.0,
+			Memory: 1073741824.0,
 		},
 	}
 

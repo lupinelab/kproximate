@@ -43,7 +43,7 @@ type AllocatedResources struct {
 	Memory float64
 }
 
-func NewKubernetesClient() *KubernetesClient {
+func NewKubernetesClient() (KubernetesClient, error) {
 	var kubeconfig *string
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
@@ -55,7 +55,7 @@ func NewKubernetesClient() *KubernetesClient {
 	if _, err := os.Stat(*kubeconfig); err == nil {
 		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
 		if err != nil {
-			panic(err.Error())
+			return KubernetesClient{}, err
 		}
 	} else {
 		config, err = rest.InClusterConfig()
@@ -69,11 +69,11 @@ func NewKubernetesClient() *KubernetesClient {
 		panic(err.Error())
 	}
 
-	kubernetes := &KubernetesClient{
+	kubernetes := KubernetesClient{
 		client: clientset,
 	}
 
-	return kubernetes
+	return kubernetes, nil
 }
 
 func (k *KubernetesClient) GetUnschedulableResources() (*UnschedulableResources, error) {

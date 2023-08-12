@@ -5,24 +5,35 @@ import (
 	"encoding/json"
 
 	"github.com/lupinelab/kproximate/config"
-	"github.com/lupinelab/kproximate/internal"
+	"github.com/lupinelab/kproximate/rabbitmq"
 	"github.com/lupinelab/kproximate/logger"
 	"github.com/lupinelab/kproximate/scaler"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func main() {
-	kpConfig := config.GetKpConfig()
-	kpScaler := scaler.NewScaler(kpConfig)
+	kpConfig, err := config.GetKpConfig()
+	if err != nil {
+		logger.ErrorLog.Fatalf("Failed to get config: %s", err.Error())
+	}
 
-	rabbitConfig := config.GetRabbitConfig()
-	conn, _ := internal.NewRabbitmqConnection(rabbitConfig)
+	scaler, err := scaler.NewScaler(kpConfig)
+	if err != nil {
+		logger.ErrorLog.Fatalf("Failed to initialise scaler: %s", err.Error())
+	}
+
+	rabbitConfig, err := config.GetRabbitConfig()
+	if err != nil {
+		logger.ErrorLog.Fatalf("Failed to get rabbit config: %s", err.Error())
+	}
+
+	conn, _ := rabbitmq.NewRabbitmqConnection(rabbitConfig)
 	defer conn.Close()
 
-	scaleUpChannel := internal.NewChannel(conn)
+	scaleUpChannel := rabbitmq.NewChannel(conn)
 	defer scaleUpChannel.Close()
-	scaleUpQueue := internal.DeclareQueue(scaleUpChannel, "scaleUpEvents")
-	err := scaleUpChannel.Qos(
+	scaleUpQueue := rabbitmq.DeclareQueue(scaleUpChannel, "scaleUpEvents")
+	err = scaleUpChannel.Qos(
 		1,
 		0,
 		false,
@@ -31,9 +42,9 @@ func main() {
 		logger.ErrorLog.Fatalf("Failed to set scale up QoS: %s", err)
 	}
 
-	scaleDownChannel := internal.NewChannel(conn)
+	scaleDownChannel := rabbitmq.NewChannel(conn)
 	defer scaleDownChannel.Close()
-	scaleDownQueue := internal.DeclareQueue(scaleUpChannel, "scaleDownEvents")
+	scaleDownQueue := rabbitmq.DeclareQueue(scaleUpChannel, "scaleDownEvents")
 	err = scaleDownChannel.Qos(
 		1,
 		0,
@@ -69,34 +80,32 @@ func main() {
 		logger.ErrorLog.Fatalf("Failed to register scale down consumer: %s", err)
 	}
 
-	go consumeScaleUpMsgs(kpScaler, scaleUpMsgs)
-
-	go consumeScaleDownMsgs(kpScaler, scaleDownMsgs)
+	ctx := context.Background()
+	go consumeScaleUpMsgs(ctx, scaler, scaleUpMsgs)
+	go consumeScaleDownMsgs(ctx, scaler, scaleDownMsgs)
 
 	logger.InfoLog.Println("Listening for scale events")
 
-	var forever chan struct{}
-	<-forever
+	<-ctx.Done()
 }
 
-func consumeScaleUpMsgs(kpScaler *scaler.Scaler, scaleUpMsgs <-chan amqp.Delivery) {
+func consumeScaleUpMsgs(ctx context.Context, kpScaler *scaler.Scaler, scaleUpMsgs <-chan amqp.Delivery) {
 	for scaleUpMsg := range scaleUpMsgs {
 		var scaleUpEvent *scaler.ScaleEvent
 		json.Unmarshal(scaleUpMsg.Body, &scaleUpEvent)
 
 		if scaleUpMsg.Redelivered {
-			kpScaler.DeleteKpNode(scaleUpEvent.KpNodeName)
-			logger.InfoLog.Printf("Retrying scale up event: %s", scaleUpEvent.KpNodeName)
+			kpScaler.DeleteKpNode(scaleUpEvent.NodeName)
+			logger.InfoLog.Printf("Retrying scale up event: %s", scaleUpEvent.NodeName)
 		} else {
-			logger.InfoLog.Printf("Triggered scale up event: %s", scaleUpEvent.KpNodeName)
+			logger.InfoLog.Printf("Triggered scale up event: %s", scaleUpEvent.NodeName)
 		}
 
-		ctx := context.Background()
-		err := kpScaler.ScaleUp(ctx, scaleUpEvent)
-
+		scaleCtx := context.Background()
+		err := kpScaler.ScaleUp(scaleCtx, scaleUpEvent)
 		if err != nil {
 			logger.WarningLog.Printf("Scale up event failed: %s", err.Error())
-			kpScaler.DeleteKpNode(scaleUpEvent.KpNodeName)
+			kpScaler.DeleteKpNode(scaleUpEvent.NodeName)
 			scaleUpMsg.Reject(true)
 			continue
 		}
@@ -105,25 +114,25 @@ func consumeScaleUpMsgs(kpScaler *scaler.Scaler, scaleUpMsgs <-chan amqp.Deliver
 	}
 }
 
-func consumeScaleDownMsgs(kpScaler *scaler.Scaler, scaleDownMsgs <-chan amqp.Delivery) {
+func consumeScaleDownMsgs(ctx context.Context, kpScaler *scaler.Scaler, scaleDownMsgs <-chan amqp.Delivery) {
 	for scaleDownMsg := range scaleDownMsgs {
 		var scaleDownEvent *scaler.ScaleEvent
 		json.Unmarshal(scaleDownMsg.Body, &scaleDownEvent)
 
 		if scaleDownMsg.Redelivered {
-			logger.InfoLog.Printf("Retrying scale down event: %s", scaleDownEvent.KpNodeName)
+			logger.InfoLog.Printf("Retrying scale down event: %s", scaleDownEvent.NodeName)
 		} else {
-			logger.InfoLog.Printf("Triggered scale down event: %s", scaleDownEvent.KpNodeName)
+			logger.InfoLog.Printf("Triggered scale down event: %s", scaleDownEvent.NodeName)
 		}
 
-		ctx := context.Background()
-		err := kpScaler.ScaleDown(ctx, scaleDownEvent)
-
+		scaleCtx := context.Background()
+		err := kpScaler.ScaleDown(scaleCtx, scaleDownEvent)
 		if err != nil {
 			logger.WarningLog.Printf("Scale down event failed: %s", err.Error())
 			scaleDownMsg.Reject(true)
 			continue
 		}
+		logger.InfoLog.Printf("Deleted %s", scaleDownEvent.NodeName)
 
 		scaleDownMsg.Ack(false)
 	}

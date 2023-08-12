@@ -30,9 +30,12 @@ jobs:
       - run: 
           name: Run tests
           command: go test ./...
-  build_and_publish:
+  build_image:
     docker:
       - image: cimg/go:1.20
+    parameters:
+      component:
+        type: string    
     steps:
       - setup_remote_docker
       - checkout
@@ -43,11 +46,12 @@ jobs:
           name: Login to dockerhub
           command: docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
       - run:
-          name: Build & push controller image
-          command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.controller -t lupinelab/kproximate-controller:$CIRCLE_TAG --push .
-      - run:
-          name: Build & push worker image
-          command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.worker -t lupinelab/kproximate-worker:$CIRCLE_TAG --push .
+          name: Build & push << parameters.component >> image
+          command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.<< parameters.component >> -t lupinelab/kproximate-<< parameters.component >>:$CIRCLE_TAG --push . 
+  publish_helm_chart:
+    docker:
+      - image: cimg/base:current
+    steps:
       - setup_helm
       - run:
           name: Package the helm chart
@@ -63,14 +67,29 @@ workflows:
           filters:
             tags:
               only: /\d+\.\d+\.\d+/
-      - build_and_publish:
+      - build_image:
+          name: build << matrix.component >> image
           context:
             - dockerhub
-            - charts.lupinelab.co.uk
           requires:
             - test
+          matrix:
+            parameters:
+              component: ["controller", "worker"]
           filters:
             branches:
               ignore: /.*/
             tags:
               only: /\d+\.\d+\.\d+/
+      - publish_helm_chart:
+          context:
+            - charts.lupinelab.co.uk
+          requires:
+            - test
+            - build_image
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /\d+\.\d+\.\d+/
+

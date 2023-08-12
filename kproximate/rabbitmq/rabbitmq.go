@@ -1,4 +1,4 @@
-package internal
+package rabbitmq
 
 import (
 	"crypto/tls"
@@ -16,7 +16,7 @@ type queueInfo struct {
 	MessagesUnacknowledged int `json:"messages_unacknowledged,omitempty"`
 }
 
-func NewRabbitmqConnection(rabbitConfig *config.RabbitConfig) (*amqp.Connection, *http.Client) {
+func NewRabbitmqConnection(rabbitConfig config.RabbitConfig) (*amqp.Connection, *http.Client) {
 	tls := &tls.Config{InsecureSkipVerify: true}
 
 	rabbitMQUrl := fmt.Sprintf("amqps://%s:%s@%s:%d/", rabbitConfig.User, rabbitConfig.Password, rabbitConfig.Host, rabbitConfig.Port)
@@ -66,7 +66,7 @@ func DeclareQueue(ch *amqp.Channel, queueName string) *amqp.Queue {
 	return &q
 }
 
-func GetQueueState(ch *amqp.Channel, queueName string) int {
+func GetPendingScaleEvents(ch *amqp.Channel, queueName string) (int, error) {
 	args := amqp.Table{
 		"x-queue-type":     "quorum",
 		"x-delivery-limit": 2,
@@ -80,17 +80,17 @@ func GetQueueState(ch *amqp.Channel, queueName string) int {
 		args,  // arguments
 	)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to find queue length: %s", err)
+		return 0, err
 	}
 
-	return scaleEvents.Messages
+	return scaleEvents.Messages, nil
 }
 
-func GetUnAckedMessages(client *http.Client, rabbitConfig *config.RabbitConfig, queueName string) int {
+func GetRunningScaleEvents(client *http.Client, rabbitConfig config.RabbitConfig, queueName string) (int, error) {
 	endpoint := fmt.Sprintf("http://%s:15672/api/queues/%s/%s", rabbitConfig.Host, url.PathEscape("/"), queueName)
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Could not build queue query: %s", err.Error())
+		return 0, err
 	}
 
 	req.Close = true
@@ -98,7 +98,7 @@ func GetUnAckedMessages(client *http.Client, rabbitConfig *config.RabbitConfig, 
 
 	res, err := client.Do(req)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Could not query queue: %s", err.Error())
+		return 0, err
 	}
 	defer res.Body.Close()
 
@@ -106,8 +106,8 @@ func GetUnAckedMessages(client *http.Client, rabbitConfig *config.RabbitConfig, 
 
 	err = json.NewDecoder(res.Body).Decode(&queueInfo)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Could not decode queue query response: %s", err.Error())
+		return 0, err
 	}
 
-	return queueInfo.MessagesUnacknowledged
+	return queueInfo.MessagesUnacknowledged, nil
 }

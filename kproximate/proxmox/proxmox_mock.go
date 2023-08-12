@@ -3,6 +3,7 @@ package proxmox
 import (
 	"context"
 	"errors"
+	"regexp"
 
 	"github.com/Telmate/proxmox-api-go/proxmox"
 )
@@ -10,8 +11,8 @@ import (
 type ProxmoxMockClient struct {
 }
 
-func (p *ProxmoxMockClient) GetClusterStats() []PHostInformation {
-	pHosts := []PHostInformation{
+func (p *ProxmoxMockClient) GetClusterStats() ([]HostInformation, error) {
+	pHosts := []HostInformation{
 		{
 			Id:     "node/host-01",
 			Node:   "host-01",
@@ -37,10 +38,10 @@ func (p *ProxmoxMockClient) GetClusterStats() []PHostInformation {
 			Status: "online",
 		},
 	}
-	return pHosts
+	return pHosts, nil
 }
 
-func (p *ProxmoxMockClient) GetRunningKpNodes() []VmInformation {
+func (p *ProxmoxMockClient) GetRunningKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
 	kpNodes := []VmInformation{
 		{
 			Cpu:     0.114889359119222,
@@ -57,15 +58,15 @@ func (p *ProxmoxMockClient) GetRunningKpNodes() []VmInformation {
 		},
 	}
 
-	return kpNodes
+	return kpNodes, nil
 }
 
-func (p *ProxmoxMockClient) GetAllKpNodes() ([]VmInformation, error) {
+func (p *ProxmoxMockClient) GetAllKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
 	err := errors.New("")
 	return []VmInformation{}, err
 }
 
-func (p *ProxmoxMockClient) GetKpNode(kpNodeName string) (VmInformation, error) {
+func (p *ProxmoxMockClient) GetKpNode(name string, kpNodeName regexp.Regexp) (VmInformation, error) {
 	err := errors.New("")
 	return VmInformation{}, err
 }
@@ -79,7 +80,7 @@ func (p *ProxmoxMockClient) NewKpNode(ctx context.Context, ok chan<- bool, errch
 
 }
 
-func (p *ProxmoxMockClient) DeleteKpNode(kpNodeName string) error {
+func (p *ProxmoxMockClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {
 	err := errors.New("")
 	return err
 }

@@ -5,14 +5,15 @@ import (
 	"crypto/tls"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/Telmate/proxmox-api-go/proxmox"
 	"github.com/mitchellh/mapstructure"
 )
 
-type PHostInformation struct {
+var exitStatusSuccess = regexp.MustCompile(`^(OK|WARNINGS)`)
+
+type HostInformation struct {
 	Id     string  `json:"id"`
 	Node   string  `json:"node"`
 	Cpu    float64 `json:"cpu"`
@@ -47,56 +48,56 @@ type VMConfig struct {
 }
 
 type Proxmox interface {
-	GetClusterStats() []PHostInformation
-	GetRunningKpNodes() []VmInformation
-	GetAllKpNodes() ([]VmInformation, error)
-	GetKpNode(kpNodeName string) (VmInformation, error)
+	GetClusterStats() ([]HostInformation, error)
+	GetRunningKpNodes(regexp.Regexp) ([]VmInformation, error)
+	GetAllKpNodes(regexp.Regexp) ([]VmInformation, error)
+	GetKpNode(name string, kpNodeName regexp.Regexp) (VmInformation, error)
 	GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfig, error)
 	NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef)
-	DeleteKpNode(kpNodeName string) error
+	DeleteKpNode(name string, kpnodeName regexp.Regexp) error
 }
 
 type ProxmoxClient struct {
 	Client *proxmox.Client
 }
 
-func NewProxmoxClient(pm_url string, allowInsecure bool, pmUser string, pmToken string, debug bool) *ProxmoxClient {
+func NewProxmoxClient(pm_url string, allowInsecure bool, pmUser string, pmToken string, debug bool) (ProxmoxClient, error) {
 	tlsconf := &tls.Config{InsecureSkipVerify: allowInsecure}
 	newClient, err := proxmox.NewClient(pm_url, nil, "", tlsconf, "", 300)
 	if err != nil {
-		panic(err.Error())
+		return ProxmoxClient{}, err
 	}
 	newClient.SetAPIToken(pmUser, pmToken)
 
-	*proxmox.Debug = debug
+	proxmox.Debug = &debug
 
-	proxmox := &ProxmoxClient{
+	proxmox := ProxmoxClient{
 		Client: newClient,
 	}
 
-	return proxmox
+	return proxmox, nil
 }
 
-func (p *ProxmoxClient) GetClusterStats() []PHostInformation {
+func (p *ProxmoxClient) GetClusterStats() ([]HostInformation, error) {
 	hostList, err := p.Client.GetResourceList("node")
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
-	var pHosts []PHostInformation
+	var pHosts []HostInformation
 
 	err = mapstructure.Decode(hostList, &pHosts)
 	if err != nil {
 		panic(err.Error())
 	}
 
-	return pHosts
+	return pHosts, nil
 }
 
-func (p *ProxmoxClient) GetRunningKpNodes() []VmInformation {
+func (p *ProxmoxClient) GetRunningKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
 	vmlist, err := p.Client.GetVmList()
 	if err != nil {
-		panic(err.Error())
+		return []VmInformation{}, err
 	}
 
 	var kpnodes vmList
@@ -107,8 +108,6 @@ func (p *ProxmoxClient) GetRunningKpNodes() []VmInformation {
 	}
 
 	var kpNodes []VmInformation
-
-	var kpNodeName = regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`)
 
 	for _, vm := range kpnodes.Data {
 		if kpNodeName.MatchString(vm.Name) && vm.Status == "running" {
@@ -116,10 +115,10 @@ func (p *ProxmoxClient) GetRunningKpNodes() []VmInformation {
 		}
 	}
 
-	return kpNodes
+	return kpNodes, nil
 }
 
-func (p *ProxmoxClient) GetAllKpNodes() ([]VmInformation, error) {
+func (p *ProxmoxClient) GetAllKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
 	vmlist, err := p.Client.GetVmList()
 	if err != nil {
 		return nil, err
@@ -133,8 +132,6 @@ func (p *ProxmoxClient) GetAllKpNodes() ([]VmInformation, error) {
 	}
 
 	var kpNodes []VmInformation
-
-	var kpNodeName = regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`)
 
 	for _, vm := range kpnodes.Data {
 		if kpNodeName.MatchString(vm.Name) {
@@ -145,14 +142,16 @@ func (p *ProxmoxClient) GetAllKpNodes() ([]VmInformation, error) {
 	return kpNodes, err
 }
 
-func (p *ProxmoxClient) GetKpNode(kpNodeName string) (VmInformation, error) {
-	kpNodes, err := p.GetAllKpNodes()
+func (p *ProxmoxClient) GetKpNode(name string, kpNodeName regexp.Regexp) (VmInformation, error) {
+	kpNodes, err := p.GetAllKpNodes(kpNodeName)
 	if err != nil {
 		return VmInformation{}, err
 	}
 
+	nodeName := regexp.MustCompile(name)
+
 	for _, vm := range kpNodes {
-		if strings.Contains(vm.Name, kpNodeName) {
+		if nodeName.MatchString(vm.Name) {
 			return vm, err
 		}
 	}
@@ -228,8 +227,8 @@ func (p *ProxmoxClient) NewKpNode(
 	ok <- true
 }
 
-func (p *ProxmoxClient) DeleteKpNode(kpNodeName string) error {
-	kpNode, err := p.GetKpNode(kpNodeName)
+func (p *ProxmoxClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {
+	kpNode, err := p.GetKpNode(name, kpNodeName)
 	if err != nil {
 		return err
 	}
@@ -238,8 +237,6 @@ func (p *ProxmoxClient) DeleteKpNode(kpNodeName string) error {
 	if err != nil {
 		return err
 	}
-
-	exitStatusSuccess := regexp.MustCompile(`^(OK|WARNINGS)`)
 
 	exitStatus, err := p.Client.StopVm(vmRef)
 	if err != nil {

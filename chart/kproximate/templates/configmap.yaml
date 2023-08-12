@@ -6,6 +6,7 @@ data:
   kpNodeCores: {{ .Values.kproximate.kpNodeCores | quote }}
   kpLoadHeadroom: {{ .Values.kproximate.kpLoadHeadroom | quote }}
   kpNodeMemory: {{ .Values.kproximate.kpNodeMemory | quote }}
+  kpNodeNamePrefix: {{ .Values.kproximate.kpNodeNamePrefix | quote }}
   kpNodeTemplateName: {{ .Values.kproximate.kpNodeTemplateName | quote | required ".Values.kproximate.kpNodeTemplateName is required" }}
   maxKpNodes: {{ .Values.kproximate.maxKpNodes | quote }}
   pmAllowInsecure: {{ .Values.kproximate.pmAllowInsecure | quote }}
