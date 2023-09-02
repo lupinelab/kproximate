@@ -1,11 +1,15 @@
 kproximate:
-  kpNodeCores: 2
-  kpNodeMemory: 2048
-  kpNodeTemplateName: kproximate-template
-  maxKPNodes: 3
-  pmAllowInsecure: false
-  pmDebug: false
-  pmUrl: https://proxmox_server:8006/api2/json
-  pmUserID: kproximate@pam!kproximate
-  pmToken: 920d7e60-5eca-4756-3a34-c090b2d797a4
-  sshKey: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC/iO/fMf5mlFzwaCoWneYdX400LkodQ1W7C1uzJ/7rSpKgqn9Wkf6MGh12LbESWWx9q8SCkXQqONHSRv7Ctwa72daDuyFMo6rHCrPG03wcjKrEYROmq0oUenTLFu+OSewSkxBqT2Wzy6uTwo9JptyOPmZMshe1jXfuwLV5QvbOAbsc7fsKEh6wIxnFrFlYDQWaSW8Yhw3b3Osm644nQfrvd6MAjHR8HPVr8bV0AXEgXo+v7YOMwqycENFSFbF92Y1aG82qwtDPo3ovo56wX8NkbY88vf4CSE/sTdLmHGqrm4DAeXIw9VsMyArBN/x9oHajBhRn8Z6MKTFk6YIV0sxPSffgGMD3nFX7E+wBCVRknrYaPksMvqVmTKXkpSEQz8/6O3eCymVF63G6+FvpSApJ8JzUwUqbC9lbZix1sGAaHf2yjqGGEhqXh6FSpRVU4lZGCy9XRI2v+Nvr4sD5WBfU/Nu7RL3dSDkZ96DGtX7KD9clG0lbo/Zxnd6FxRXA8U8=
+  config:
+    kpNodeCores: 2
+    kpNodeMemory: 2048
+    kpNodeNamePrefix: kp-node
+    kpNodeTemplateName: kproximate-template
+    loadHeadroom: 0.2
+    maxKpNodes: 4
+    pmUrl: https://<proxmox-host>:8006/api2/json
+    pmUserID: kproximate@pam!kproximate
+
+  secrets:
+    pmToken: <proxmox-api-token>
+    rabbitmqPassword: <set-rabbitmq-password-here>
+    sshKey: <ssh-public-key>

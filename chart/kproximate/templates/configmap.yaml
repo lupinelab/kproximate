@@ -3,18 +3,18 @@ kind: ConfigMap
 metadata:
   name: {{ include "kproximate.fullname" . }}
 data:
-  kpNodeCores: {{ .Values.kproximate.kpNodeCores | quote }}
-  kpLoadHeadroom: {{ .Values.kproximate.kpLoadHeadroom | quote }}
-  kpNodeMemory: {{ .Values.kproximate.kpNodeMemory | quote }}
-  kpNodeNamePrefix: {{ .Values.kproximate.kpNodeNamePrefix | quote }}
-  kpNodeTemplateName: {{ .Values.kproximate.kpNodeTemplateName | quote | required ".Values.kproximate.kpNodeTemplateName is required" }}
-  maxKpNodes: {{ .Values.kproximate.maxKpNodes | quote }}
-  pmAllowInsecure: {{ .Values.kproximate.pmAllowInsecure | quote }}
-  pmDebug: {{ .Values.kproximate.pmDebug | quote }}
-  pmUrl: {{ .Values.kproximate.pmUrl | quote | required ".Values.kproximate.pmUrl is required" }}
-  pmUserID: {{ .Values.kproximate.pmUserID | quote | required ".Values.kproximate.pmUserID is required" }}
-  pollInterval: {{ .Values.kproximate.pollInterval | quote }}
-  rabbitMQHost: {{ .Values.kproximate.rabbitMQHost | quote }}
-  rabbitMQPort: {{ .Values.kproximate.rabbitMQPort | quote }}
+  kpNodeCores: {{ .Values.kproximate.config.kpNodeCores | quote }}
+  kpNodeMemory: {{ .Values.kproximate.config.kpNodeMemory | quote }}
+  kpNodeNamePrefix: {{ .Values.kproximate.config.kpNodeNamePrefix | quote }}
+  kpNodeTemplateName: {{ .Values.kproximate.config.kpNodeTemplateName | quote | required ".Values.kproximate.config.kpNodeTemplateName is required" }}
+  loadHeadroom: {{ .Values.kproximate.config.loadHeadroom | quote }}
+  maxKpNodes: {{ .Values.kproximate.config.maxKpNodes | quote }}
+  pmAllowInsecure: {{ .Values.kproximate.config.pmAllowInsecure | quote }}
+  pmDebug: {{ .Values.kproximate.config.pmDebug | quote }}
+  pmUrl: {{ .Values.kproximate.config.pmUrl | quote | required ".Values.kproximate.config.pmUrl is required" }}
+  pmUserID: {{ .Values.kproximate.config.pmUserID | quote | required ".Values.kproximate.config.pmUserID is required" }}
+  pollInterval: {{ .Values.kproximate.config.pollInterval | quote }}
+  rabbitMQHost: {{ .Values.kproximate.config.rabbitMQHost | quote }}
+  rabbitMQPort: {{ .Values.kproximate.config.rabbitMQPort | quote }}
   rabbitMQUser: {{ .Values.rabbitmq.auth.username | quote }}
-  waitSecondsForJoin: {{ .Values.kproximate.waitSecondsForJoin | quote }}
+  waitSecondsForJoin: {{ .Values.kproximate.config.waitSecondsForJoin | quote }}

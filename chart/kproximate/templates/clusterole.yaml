@@ -22,7 +22,3 @@ rules:
 - apiGroups: ["extensions"]
   resources: ["daemonsets", "replicasets"]
   verbs: ["get", "list"]
-# Needed to aquire leader lease
-- apiGroups: ["coordination.k8s.io"]
-  resources: ["leases"]
-  verbs: ["get", "list", "watch", "create", "update"]

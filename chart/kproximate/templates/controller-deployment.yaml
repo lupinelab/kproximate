@@ -40,9 +40,10 @@ spec:
       {{- end }}
       affinity:
         nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: Exists
               - key: node-role.kubernetes.io/master
@@ -65,6 +66,6 @@ spec:
         - -c
         - >
           set -x;
-          while [ $(curl -sw '%{http_code}' --user {{ .Values.rabbitmq.auth.username }}:{{ .Values.rabbitmq.auth.password }} "http://kproximate-rabbitmq:15672/api/health/checks/local-alarms" -o /dev/null) -ne 200 ]; do
+          while [ $(curl -sw '%{http_code}' --user {{ .Values.rabbitmq.auth.username }}:{{ .Values.kproximate.secrets.rabbitmqPassword }} "http://{{ .Values.kproximate.config.rabbitMQHost }}:15672/api/health/checks/local-alarms" -o /dev/null) -ne 200 ]; do
             sleep 5;
           done

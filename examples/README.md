@@ -10,7 +10,7 @@ There are four main requirements for configuring and deploying kproximate:
 
 The `create_kproximate_api_token.sh` script can be run on a Proxmox host to create a token with the required privileges, it will return the token ID and token which will be required later.
 
-A custom user/token can be used however the below privileges must be granted to it:
+A custom user/token can be used, however the below privileges must be granted to it:
 
 * Datastore.AllocateSpace
 * Datastore.Audit
@@ -66,55 +66,14 @@ Your Proxmox API endpoint should also be accessible from this network. In my cas
 
 ## Installing kproximate
 
-A helm chart is provided [INSERT HELM CHART LINK] for installing the application into your kubernetes cluster. See [example-values.yaml](https://github.com/lupinelab/kproximate/tree/main/examples/example-values.yaml) for a basic configuraton example.
+A helm chart is provided at https://charts.lupinelab.co.uk/ for installing the application into your kubernetes cluster. See [example-values.yaml](https://github.com/lupinelab/kproximate/tree/main/examples/example-values.yaml) for a basic configuraton example.
 
 Add the repo:
 
-`helm repo add kproximate https://link-to-helm-chart`
+`helm repo add lupinelab https://charts.lupinelab.co.uk`
 
 Install kproximate:
 
-`helm install lupinelab/kproximate -f examples-values.yaml -n kproximate --create-namespace`
+`helm install lupinelab/kproximate -f your-values.yaml -n kproximate --create-namespace`
 
-The full set of configuration options with their default values is below:
-```
-kproximate:
-  // The period after creation that a kproximate node will be given grace to be empty before it is a target for deletion
-  emptyGraceSecondsAfterCreation: 120 
-  
-  // The number of cores assigned to new kproximate nodes
-  kpNodeCores: 2
-  
-  // The required headroom used in scale down calculations expressed as value between 0 and 1
-  kpNodeHeadroom: 0.2
-  
-  // The amount of memory assigned to new kproximate nodes in MiB
-  kpNodeMemory: 2048
-  
-  // The name of the Proxmox template for kproximate nodes
-  kpNodeTemplateName: // Required
-  
-  // The maximum number of kproximate nodes allowable
-  maxKPNodes: 3
-  
-  // If set to true skip TLS checks for the Proxmox API
-  pmAllowInsecure: false
-  
-  // If set to true enable debug output for Proxmox API calls
-  pmDebug: false
-  
-  // The Proxmox API URL
-  pmUrl: // Required
-  
-  // The Proxmox API token ID
-  pmUserID: // Required
-  
-  // The Proxmox API token
-  pmToken: // Required
-  
-  // The number of seconds between polls of the cluster for scaling
-  secondsBetweenPolls: 5
-  
-  // The SSH public key to inject into the kproximate template
-  sshKey: None
-```
+See [values.yaml](https://github.com/lupinelab/kproximate/tree/main/chart/kproximate/values.yaml) in the helm chart for the full set of configuration options and defaults:
