@@ -6,15 +6,15 @@ import (
 
 func TestValidateConfig(t *testing.T) {
 	cfg := &KproximateConfig{
-		KpLoadHeadroom:     0.1,
+		LoadHeadroom:     0.1,
 		PollInterval:       5,
 		WaitSecondsForJoin: 30,
 	}
 
 	*cfg = validateConfig(cfg)
 
-	if cfg.KpLoadHeadroom != 0.2 {
-		t.Errorf("Expected 0.2, got %f", cfg.KpLoadHeadroom)
+	if cfg.LoadHeadroom != 0.2 {
+		t.Errorf("Expected 0.2, got %f", cfg.LoadHeadroom)
 	}
 
 	if cfg.PollInterval != 10 {

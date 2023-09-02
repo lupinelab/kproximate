@@ -3,9 +3,9 @@ version: 2.1
 commands:
   setup_helm:
     steps:
-      - run: curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-      - run: chmod 700 get_helm.sh
-      - run: ./get_helm.sh
+      - run: curl -fsSL -o /tmp/get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      - run: chmod 700 /tmp/get_helm.sh
+      - run: /tmp/get_helm.sh
       - run: helm plugin install https://github.com/chartmuseum/helm-push
 
 jobs:

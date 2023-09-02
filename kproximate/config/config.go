@@ -9,23 +9,23 @@ import (
 )
 
 type KproximateConfig struct {
-	KpNodeCores        int     `env:"kpNodeCores"`
-	KpLoadHeadroom     float64 `env:"kpLoadHeadroom"`
-	KpNodeMemory       int     `env:"kpNodeMemory"`
-	KpNodeNamePrefix   string  `env:"kpNodeNamePrefix"`
-	KpNodeNameRegex    *regexp.Regexp
+	KpNodeCores        int    `env:"kpNodeCores"`
+	KpNodeMemory       int    `env:"kpNodeMemory"`
+	KpNodeNamePrefix   string `env:"kpNodeNamePrefix"`
+	KpNodeNameRegex    regexp.Regexp
 	KpNodeParams       map[string]interface{}
 	KpNodeTemplateName string `env:"kpNodeTemplateName"`
 	KpNodeTemplateRef  proxmox.VmRef
-	MaxKpNodes         int    `env:"maxKpNodes"`
-	PmAllowInsecure    bool   `env:"pmAllowInsecure"`
-	PmDebug            bool   `env:"pmDebug"`
-	PmToken            string `env:"pmToken"`
-	PmUrl              string `env:"pmUrl"`
-	PmUserID           string `env:"pmUserID"`
-	PollInterval       int    `env:"pollInterval"`
-	SshKey             string `env:"sshKey"`
-	WaitSecondsForJoin int    `env:"waitSecondsForJoin"`
+	LoadHeadroom       float64 `env:"loadHeadroom"`
+	MaxKpNodes         int     `env:"maxKpNodes"`
+	PmAllowInsecure    bool    `env:"pmAllowInsecure"`
+	PmDebug            bool    `env:"pmDebug"`
+	PmToken            string  `env:"pmToken"`
+	PmUrl              string  `env:"pmUrl"`
+	PmUserID           string  `env:"pmUserID"`
+	PollInterval       int     `env:"pollInterval"`
+	SshKey             string  `env:"sshKey"`
+	WaitSecondsForJoin int     `env:"waitSecondsForJoin"`
 }
 
 type RabbitConfig struct {
@@ -60,8 +60,8 @@ func GetRabbitConfig() (RabbitConfig, error) {
 }
 
 func validateConfig(config *KproximateConfig) KproximateConfig {
-	if config.KpLoadHeadroom < 0.2 {
-		config.KpLoadHeadroom = 0.2
+	if config.LoadHeadroom < 0.2 {
+		config.LoadHeadroom = 0.2
 	}
 
 	if config.PollInterval < 10 {

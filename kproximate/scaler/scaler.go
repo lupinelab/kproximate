@@ -39,7 +39,7 @@ func NewScaler(config config.KproximateConfig) (*Scaler, error) {
 		return nil, err
 	}
 
-	config.KpNodeNameRegex = regexp.MustCompile(fmt.Sprintf(`^%s-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`, config.KpNodeNamePrefix))
+	config.KpNodeNameRegex = *regexp.MustCompile(fmt.Sprintf(`^%s-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`, config.KpNodeNamePrefix))
 
 	kpNodeTemplateRef, err := proxmox.GetKpNodeTemplateRef(config.KpNodeTemplateName)
 	if err != nil {
@@ -64,7 +64,7 @@ func NewScaler(config config.KproximateConfig) (*Scaler, error) {
 		Proxmox:    &proxmox,
 	}
 
-	return &scaler, nil
+	return &scaler, err
 }
 
 func (scaler *Scaler) newKpNodeName() string {
@@ -86,7 +86,7 @@ func (scaler *Scaler) RequiredScaleEvents(requiredResources *kubernetes.Unschedu
 	}
 
 	if requiredResources.Memory != 0 {
-		// Bit shift megabytes to bytes
+		// Bit shift mebibytes to bytes
 		kpNodeMemoryBytes := scaler.Config.KpNodeMemory << 20
 		// The expected memory resources after in-progress scaling events complete
 		expectedMemory := int64(kpNodeMemoryBytes) * int64(numCurrentEvents)
@@ -173,7 +173,7 @@ func (scaler *Scaler) SelectTargetHosts(scaleEvents []*ScaleEvent) error {
 		return err
 	}
 
-	kpNodes, err := scaler.Proxmox.GetRunningKpNodes(*scaler.Config.KpNodeNameRegex)
+	kpNodes, err := scaler.Proxmox.GetRunningKpNodes(scaler.Config.KpNodeNameRegex)
 	if err != nil {
 		return err
 	}
@@ -221,7 +221,7 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 
 	errChan := make(chan error)
 	defer close(errChan)
-	
+
 	pctx, cancelPCtx := context.WithTimeout(ctx, time.Duration(time.Second*20))
 	defer cancelPCtx()
 
@@ -269,17 +269,8 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 	return nil
 }
 
-func (scaler *Scaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
-	err := scaler.Kubernetes.DeleteKpNode(scaleEvent.NodeName)
-	if err != nil {
-		return err
-	}
-
-	return scaler.Proxmox.DeleteKpNode(scaleEvent.NodeName, *scaler.Config.KpNodeNameRegex)
-}
-
 func (scaler *Scaler) NumKpNodes() (int, error) {
-	kpNodes, err := scaler.Kubernetes.GetKpNodes()
+	kpNodes, err := scaler.Kubernetes.GetKpNodes(scaler.Config.KpNodeNameRegex)
 	if err != nil {
 		return 0, err
 	}
@@ -287,70 +278,9 @@ func (scaler *Scaler) NumKpNodes() (int, error) {
 	return len(kpNodes), err
 }
 
-// This function is only used when it is unclear whether a node has joined the kubernetes cluster
-// ie when cleaning up after a failed scaling event
-func (scaler *Scaler) DeleteKpNode(kpNodeName string) error {
-	_ = scaler.Kubernetes.DeleteKpNode(kpNodeName)
-
-	return scaler.Proxmox.DeleteKpNode(kpNodeName, *scaler.Config.KpNodeNameRegex)
-}
-
-// func (scaler *KProximateScaler) cleanUpEmptyNodes() {
-// 	emptyKpNodes, err := scaler.KCluster.GetEmptyKpNodes()
-// 	if err != nil {
-// 		logger.ErrorLog.Printf("Could not get emtpy nodes: %s", err.Error())
-// 	}
-
-// 	for _, emptyNode := range emptyKpNodes {
-// 		emptyPNode, err := scaler.PCluster.GetKpNode(emptyNode.Name)
-// 		if err != nil {
-// 			logger.ErrorLog.Printf("Could not get emtpy node: %s", err.Error())
-// 		}
-
-// 		// Allow new nodes a grace period of emptiness after creation before they are targets for cleanup
-// 		if emptyPNode.Uptime < scaler.Config.EmptyGraceSecondsAfterCreation {
-// 			continue
-// 		}
-
-// 		err = scaler.DeleteKpNode(emptyNode.Name)
-// 		if err != nil {
-// 			logger.WarningLog.Printf("Failed to delete empty node %s: %s", emptyNode.Name, err.Error())
-// 		}
-
-// 		logger.InfoLog.Printf("Deleted empty node: %s", emptyNode.Name)
-
-// 	}
-// }
-
-// func (scaler *KProximateScaler) cleanUpStoppedNodes() {
-// 	kpNodes, err := scaler.PCluster.GetAllKpNodes()
-// 	if err != nil {
-// 		logger.ErrorLog.Printf("Could not get pNodes: %s", err.Error())
-// 	}
-
-// 	var stoppedNodes []kproxmox.VmInformation
-// 	for _, kpNode := range kpNodes {
-// 		if kpNode.Status == "stopped" {
-// 			stoppedNodes = append(stoppedNodes, kpNode)
-// 		}
-// 	}
-
-// 	for _, stoppedNode := range stoppedNodes {
-// 		err := scaler.PCluster.DeleteKpNode(stoppedNode.Name)
-// 		if err != nil {
-// 			logger.WarningLog.Printf("Failed to delete stopped node %s: %s", stoppedNode.Name, err.Error())
-// 			continue
-// 		}
-
-// 		logger.InfoLog.Printf("Deleted stopped node %s", stoppedNode.Name)
-// 	}
-// }
-
-func (scaler *Scaler) AssessScaleDown(allocatedResources map[string]*kubernetes.AllocatedResources, numKpNodes int) *ScaleEvent {
-	totalCpuAllocatable := scaler.Config.KpNodeCores * numKpNodes
-	// Bit shift megabytes to bytes
-	kpNodeMemoryBytes := scaler.Config.KpNodeMemory << 20
-	totalMemoryAllocatable := kpNodeMemoryBytes * numKpNodes
+func (scaler *Scaler) AssessScaleDown(allocatedResources map[string]*kubernetes.AllocatedResources, workerNodesAllocatable kubernetes.WorkerNodesAllocatableResources) *ScaleEvent {
+	totalCpuAllocatable := workerNodesAllocatable.Cpu
+	totalMemoryAllocatable := workerNodesAllocatable.Memory
 
 	var currentCpuAllocated float64
 	for _, kpNode := range allocatedResources {
@@ -362,8 +292,8 @@ func (scaler *Scaler) AssessScaleDown(allocatedResources map[string]*kubernetes.
 		currentMemoryAllocated += kpNode.Memory
 	}
 
-	acceptCpuScaleDown := scaler.assessScaleDownForResourceType(currentCpuAllocated, totalCpuAllocatable, numKpNodes)
-	acceptMemoryScaleDown := scaler.assessScaleDownForResourceType(currentMemoryAllocated, totalMemoryAllocatable, numKpNodes)
+	acceptCpuScaleDown := scaler.assessScaleDownForResourceType(currentCpuAllocated, totalCpuAllocatable, int64(scaler.Config.KpNodeCores))
+	acceptMemoryScaleDown := scaler.assessScaleDownForResourceType(currentMemoryAllocated, totalMemoryAllocatable, int64(scaler.Config.KpNodeMemory<<20))
 
 	if acceptCpuScaleDown && acceptMemoryScaleDown {
 		scaleEvent := ScaleEvent{
@@ -375,7 +305,7 @@ func (scaler *Scaler) AssessScaleDown(allocatedResources map[string]*kubernetes.
 	return nil
 }
 
-func (scaler *Scaler) assessScaleDownForResourceType(currentResourceAllocated float64, totalResourceAllocatable int, numKpNodes int) bool {
+func (scaler *Scaler) assessScaleDownForResourceType(currentResourceAllocated float64, totalResourceAllocatable int64, kpNodeResourceCapacity int64) bool {
 	if currentResourceAllocated == 0 {
 		return false
 	}
@@ -385,9 +315,9 @@ func (scaler *Scaler) assessScaleDownForResourceType(currentResourceAllocated fl
 	totalResourceLoad := currentResourceAllocated / float64(totalResourceAllocatable)
 	// The expected allocatable resources of the cluster after scaledown minus the
 	// requested load headroom.
-	acceptableResourceLoadForScaleDown := (float64(numKpNodes-1) / float64(numKpNodes)) -
-		(totalResourceLoad * scaler.Config.KpLoadHeadroom)
-
+	acceptableResourceLoadForScaleDown := (float64(totalResourceAllocatable-int64(kpNodeResourceCapacity)) / float64(totalResourceAllocatable)) -
+		(totalResourceLoad * scaler.Config.LoadHeadroom)
+		
 	return totalResourceLoad < acceptableResourceLoadForScaleDown
 }
 
@@ -417,26 +347,19 @@ func (scaler *Scaler) SelectScaleDownTarget(scaleEvent *ScaleEvent, allocatedRes
 	return nil
 }
 
-// func (scaler *KProximateScaler) removeUnbackedNodes() {
-// 	kNodes, err := scaler.KCluster.GetKpNodes()
-// 	if err != nil {
-// 		logger.ErrorLog.Printf("Cleanup failed, could not get kNodes: %s", err.Error())
-// 	}
+func (scaler *Scaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
+	err := scaler.Kubernetes.DeleteKpNode(scaleEvent.NodeName)
+	if err != nil {
+		return err
+	}
 
-// 	for _, kNode := range kNodes {
-// 		pNode, err := scaler.PCluster.GetKpNode(kNode.Name)
-// 		if err != nil {
-// 			logger.ErrorLog.Printf("Could not get pNode: %s", err.Error())
-// 		}
+	return scaler.Proxmox.DeleteKpNode(scaleEvent.NodeName, scaler.Config.KpNodeNameRegex)
+}
 
-// 		if pNode.Name == kNode.Name {
-// 			continue
-// 		} else {
-// 			err := scaler.KCluster.DeleteKpNode(kNode.Name)
-// 			if err != nil {
-// 				logger.WarningLog.Printf("Could not delete %s: %s", kNode.Name, err.Error())
-// 			}
-// 			logger.InfoLog.Printf("Deleted unbacked node %s", kNode.Name)
-// 		}
-// 	}
-// }
+// This function is only used when it is unclear whether a node has joined the kubernetes cluster
+// ie when cleaning up after a failed scaling event
+func (scaler *Scaler) DeleteKpNode(kpNodeName string) error {
+	_ = scaler.Kubernetes.DeleteKpNode(kpNodeName)
+
+	return scaler.Proxmox.DeleteKpNode(kpNodeName, scaler.Config.KpNodeNameRegex)
+}

@@ -136,14 +136,19 @@ func AssessScaleDown(
 		}
 
 		if allScaleEvents == 0 && numKpNodes > 0 {
-			allocatedResources, err := scaler.Kubernetes.GetAllocatedResources()
+			allocatedResources, err := scaler.Kubernetes.GetAllocatedResources(scaler.Config.KpNodeNameRegex)
 			if err != nil {
 				logger.ErrorLog.Fatalf("Failed to get allocated resources: %s", err.Error())
 			}
 
-			scaleDownEvent := scaler.AssessScaleDown(allocatedResources, numKpNodes)
+			workerNodeCapacity, err := scaler.Kubernetes.GetworkerNodesAllocatableResources()
+			if err != nil {
+				logger.ErrorLog.Fatalf("Failed to get worker nodes capacity: %s", err.Error())
+			}
+
+			scaleDownEvent := scaler.AssessScaleDown(allocatedResources, workerNodeCapacity)
 			if scaleDownEvent != nil {
-				kpNodes, err := scaler.Kubernetes.GetKpNodes()
+				kpNodes, err := scaler.Kubernetes.GetKpNodes(scaler.Config.KpNodeNameRegex)
 				if err != nil {
 					logger.ErrorLog.Fatalf("Failed to get kp-nodes: %s", err.Error())
 				}

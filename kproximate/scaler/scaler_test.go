@@ -170,7 +170,7 @@ func TestSelectTargetHosts(t *testing.T) {
 	s := Scaler{
 		Proxmox: &proxmox.ProxmoxMockClient{},
 		Config: config.KproximateConfig{
-			KpNodeNameRegex:  regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`),
+			KpNodeNameRegex:  *regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`),
 			KpNodeNamePrefix: "kp-node",
 		},
 	}
@@ -208,7 +208,7 @@ func TestSelectTargetHosts(t *testing.T) {
 func TestAssessScaleDownForResourceTypeZeroLoad(t *testing.T) {
 	s := Scaler{
 		Config: config.KproximateConfig{
-			KpLoadHeadroom: 0.2,
+			LoadHeadroom: 0.2,
 		},
 	}
 
@@ -221,11 +221,11 @@ func TestAssessScaleDownForResourceTypeZeroLoad(t *testing.T) {
 func TestAssessScaleDownForResourceTypeAcceptable(t *testing.T) {
 	s := Scaler{
 		Config: config.KproximateConfig{
-			KpLoadHeadroom: 0.2,
+			LoadHeadroom: 0.2,
 		},
 	}
 
-	scaleDownAcceptable := s.assessScaleDownForResourceType(1, 5, 5)
+	scaleDownAcceptable := s.assessScaleDownForResourceType(6, 10, 2)
 	if scaleDownAcceptable != true {
 		t.Errorf("Expected true but got %t", scaleDownAcceptable)
 	}
@@ -234,10 +234,11 @@ func TestAssessScaleDownForResourceTypeAcceptable(t *testing.T) {
 func TestAssessScaleDownForResourceTypeUnAcceptable(t *testing.T) {
 	s := Scaler{
 		Config: config.KproximateConfig{
-			KpLoadHeadroom: 0.2,
+			LoadHeadroom: 0.2,
 		},
 	}
-	scaleDownUnAcceptable := s.assessScaleDownForResourceType(4, 5, 5)
+
+	scaleDownUnAcceptable := s.assessScaleDownForResourceType(7, 10, 2)
 	if scaleDownUnAcceptable == true {
 		t.Errorf("Expected false but got %t", scaleDownUnAcceptable)
 	}
@@ -312,9 +313,12 @@ func TestAssessScaleDownIsAcceptable(t *testing.T) {
 		},
 	}
 
-	numKpNodes := len(allocatedResources)
+	workerNodesAllocatable := kubernetes.WorkerNodesAllocatableResources{
+		Cpu: 6,
+		Memory: 6442450944,
+	}
 
-	if s.AssessScaleDown(allocatedResources, numKpNodes) == nil {
+	if s.AssessScaleDown(allocatedResources, workerNodesAllocatable) == nil {
 		t.Errorf("AssessScaleDown returned nil")
 	}
 }
@@ -350,9 +354,14 @@ func TestAssessScaleDownIsUnacceptable(t *testing.T) {
 		},
 	}
 
-	numKpNodes := len(allocatedResources)
+	workerNodesAllocatable := kubernetes.WorkerNodesAllocatableResources{
+		Cpu: 10,
+		Memory: 10737418240,
+	}
 
-	if s.AssessScaleDown(allocatedResources, numKpNodes) != nil {
+	scaleDownAcceptable := s.AssessScaleDown(allocatedResources, workerNodesAllocatable)
+
+	if scaleDownAcceptable != nil {
 		t.Errorf("AssessScaleDown did not return nil")
 	}
 }

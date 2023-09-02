@@ -12,6 +12,8 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -21,9 +23,10 @@ import (
 type Kubernetes interface {
 	GetUnschedulableResources() (*UnschedulableResources, error)
 	IsFailedSchedulingDueToControlPlaneTaint() (bool, error)
-	GetKpNodes() ([]apiv1.Node, error)
-	GetAllocatedResources() (map[string]*AllocatedResources, error)
-	GetEmptyKpNodes() ([]apiv1.Node, error)
+	GetWorkerNodes() (*apiv1.NodeList, error)
+	GetworkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error)
+	GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, error)
+	GetAllocatedResources(kpNodeName regexp.Regexp) (map[string]*AllocatedResources, error)
 	CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
 	DeleteKpNode(kpNodeName string) error
 	CordonKpNode(KpNodeName string) error
@@ -35,6 +38,11 @@ type KubernetesClient struct {
 
 type UnschedulableResources struct {
 	Cpu    float64
+	Memory int64
+}
+
+type WorkerNodesAllocatableResources struct {
+	Cpu    int64
 	Memory int64
 }
 
@@ -134,18 +142,72 @@ func (k *KubernetesClient) IsFailedSchedulingDueToControlPlaneTaint() (bool, err
 	return false, nil
 }
 
-func (k *KubernetesClient) GetKpNodes() ([]apiv1.Node, error) {
-	nodes, err := k.client.CoreV1().Nodes().List(
-		context.TODO(),
-		metav1.ListOptions{},
+// Worker nodes should comprise of all kpNodes and any additional worker nodes
+// in the cluster that are not managed by kproximate
+func (k *KubernetesClient) GetWorkerNodes() (*apiv1.NodeList, error) {
+
+	noControlPlaneLabel, err := labels.NewRequirement(
+		"node-role.kubernetes.io/control-plane",
+		selection.DoesNotExist,
+		[]string{},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	var kpNodes []apiv1.Node
+	noMasterLabel, err := labels.NewRequirement(
+		"node-role.kubernetes.io/master",
+		selection.DoesNotExist,
+		[]string{},
+	)
+	if err != nil {
+		return nil, err
+	}
 
-	var kpNodeName = regexp.MustCompile(`^kp-node-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`)
+	labelSelector := labels.NewSelector()
+	labelSelector = labelSelector.Add(
+		*noControlPlaneLabel,
+		*noMasterLabel,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	nodes, err := k.client.CoreV1().Nodes().List(
+		context.TODO(),
+		metav1.ListOptions{
+			LabelSelector: labelSelector.String(),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return nodes, err
+}
+
+func (k *KubernetesClient) GetworkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error) {
+	var workerNodesAllocatableResources WorkerNodesAllocatableResources
+	workerNodes, err := k.GetWorkerNodes()
+	if err != nil {
+		return workerNodesAllocatableResources, err
+	}
+
+	for _, workerNode := range workerNodes.Items {
+		workerNodesAllocatableResources.Cpu += int64(workerNode.Status.Allocatable.Cpu().AsApproximateFloat64())
+		workerNodesAllocatableResources.Memory += int64(workerNode.Status.Allocatable.Memory().AsApproximateFloat64())
+	}
+
+	return workerNodesAllocatableResources, err
+}
+
+func (k *KubernetesClient) GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, error) {
+	nodes, err := k.GetWorkerNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	var kpNodes []apiv1.Node
 
 	for _, kpNode := range nodes.Items {
 		if kpNodeName.MatchString(kpNode.Name) {
@@ -156,8 +218,8 @@ func (k *KubernetesClient) GetKpNodes() ([]apiv1.Node, error) {
 	return kpNodes, err
 }
 
-func (k *KubernetesClient) GetAllocatedResources() (map[string]*AllocatedResources, error) {
-	kpNodes, err := k.GetKpNodes()
+func (k *KubernetesClient) GetAllocatedResources(kpNodeName regexp.Regexp) (map[string]*AllocatedResources, error) {
+	kpNodes, err := k.GetKpNodes(kpNodeName)
 	if err != nil {
 		return nil, err
 	}
@@ -189,33 +251,6 @@ func (k *KubernetesClient) GetAllocatedResources() (map[string]*AllocatedResourc
 	}
 
 	return allocatedResources, err
-}
-
-func (k *KubernetesClient) GetEmptyKpNodes() ([]apiv1.Node, error) {
-	nodes, err := k.GetKpNodes()
-	if err != nil {
-		return nil, err
-	}
-
-	var emptyNodes []apiv1.Node
-
-	for _, node := range nodes {
-		pods, err := k.client.CoreV1().Pods("").List(
-			context.TODO(),
-			metav1.ListOptions{
-				FieldSelector: fmt.Sprintf("spec.nodeName=%s", node.Name),
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(pods.Items) == 0 {
-			emptyNodes = append(emptyNodes, node)
-		}
-	}
-
-	return emptyNodes, err
 }
 
 func (k *KubernetesClient) CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
