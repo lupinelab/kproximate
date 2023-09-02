@@ -24,7 +24,7 @@ type Kubernetes interface {
 	GetKpNodes() ([]apiv1.Node, error)
 	GetAllocatedResources() (map[string]*AllocatedResources, error)
 	GetEmptyKpNodes() ([]apiv1.Node, error)
-	WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
+	CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
 	DeleteKpNode(kpNodeName string) error
 	CordonKpNode(KpNodeName string) error
 }
@@ -218,7 +218,7 @@ func (k *KubernetesClient) GetEmptyKpNodes() ([]apiv1.Node, error) {
 	return emptyNodes, err
 }
 
-func (k *KubernetesClient) WaitForJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
+func (k *KubernetesClient) CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
 	for {
 		newkpNode, _ := k.client.CoreV1().Nodes().Get(
 			context.TODO(),

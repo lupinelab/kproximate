@@ -71,9 +71,9 @@ func (p *ProxmoxMockClient) GetKpNode(name string, kpNodeName regexp.Regexp) (Vm
 	return VmInformation{}, err
 }
 
-func (p *ProxmoxMockClient) GetKpTemplateConfig(kpNodeTemplateRef *proxmox.VmRef) (VMConfig, error) {
+func (p *ProxmoxMockClient) GetKpNodeTemplateRef(kpNodeTemplateName string) (*proxmox.VmRef, error) {
 	err := errors.New("")
-	return VMConfig{}, err
+	return &proxmox.VmRef{}, err
 }
 
 func (p *ProxmoxMockClient) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef) {

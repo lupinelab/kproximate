@@ -41,7 +41,7 @@ func NewScaler(config config.KproximateConfig) (*Scaler, error) {
 
 	config.KpNodeNameRegex = regexp.MustCompile(fmt.Sprintf(`^%s-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`, config.KpNodeNamePrefix))
 
-	kpNodeTemplateRef, err := proxmox.Client.GetVmRefByName(config.KpNodeTemplateName)
+	kpNodeTemplateRef, err := proxmox.GetKpNodeTemplateRef(config.KpNodeTemplateName)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (scaler *Scaler) RequiredScaleEvents(requiredResources *kubernetes.Unschedu
 		// Bit shift megabytes to bytes
 		kpNodeMemoryBytes := scaler.Config.KpNodeMemory << 20
 		// The expected memory resources after in-progress scaling events complete
-		expectedMemory := int64(kpNodeMemoryBytes) * (int64(numCurrentEvents))
+		expectedMemory := int64(kpNodeMemoryBytes) * int64(numCurrentEvents)
 		// The expected amount of memory resources still required after in-progress scaling events complete
 		unaccountedMemory := requiredResources.Memory - expectedMemory
 		// The least amount of nodes that will satisfy the unaccountedMemory
@@ -189,40 +189,58 @@ func (scaler *Scaler) SelectTargetHosts(scaleEvents []*ScaleEvent) error {
 	return nil
 }
 
-func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
-	logger.InfoLog.Printf("Provisioning %s on %s", scaleEvent.NodeName, scaleEvent.TargetHost.Node)
-
-	ok := make(chan bool)
-
-	errchan := make(chan error)
-
-	pctx, cancelPCtx := context.WithTimeout(ctx, time.Duration(time.Second*20))
-	defer cancelPCtx()
-
-	go scaler.Proxmox.NewKpNode(
-		pctx,
-		ok,
-		errchan,
-		scaleEvent.NodeName,
-		scaleEvent.TargetHost.Node,
-		scaler.Config.KpNodeParams,
-		scaler.Config.KpNodeTemplateRef,
-	)
-
-ptimeout:
+func waitForNodeStart(ctx context.Context, cancel context.CancelFunc, scaleEvent *ScaleEvent, ok chan (bool), errchan chan (error)) error {
 	select {
-	case <-pctx.Done():
-		cancelPCtx()
+	case <-ctx.Done():
+		cancel()
 		return fmt.Errorf("timed out waiting for %s to start", scaleEvent.NodeName)
 
 	case err := <-errchan:
 		return err
 
 	case <-ok:
-		logger.InfoLog.Printf("Started %s", scaleEvent.NodeName)
-		break ptimeout
+		return nil
+	}
+}
+
+func waitForNodeJoin(ctx context.Context, cancel context.CancelFunc, scaleEvent *ScaleEvent, ok chan (bool)) error {
+	select {
+	case <-ctx.Done():
+		cancel()
+		return fmt.Errorf("timed out waiting for %s to join kubernetes cluster", scaleEvent.NodeName)
+	case <-ok:
+		return nil
+	}
+}
+
+func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
+	logger.InfoLog.Printf("Provisioning %s on %s", scaleEvent.NodeName, scaleEvent.TargetHost.Node)
+
+	okChan := make(chan bool)
+	defer close(okChan)
+
+	errChan := make(chan error)
+	defer close(errChan)
+	
+	pctx, cancelPCtx := context.WithTimeout(ctx, time.Duration(time.Second*20))
+	defer cancelPCtx()
+
+	go scaler.Proxmox.NewKpNode(
+		pctx,
+		okChan,
+		errChan,
+		scaleEvent.NodeName,
+		scaleEvent.TargetHost.Node,
+		scaler.Config.KpNodeParams,
+		scaler.Config.KpNodeTemplateRef,
+	)
+
+	err := waitForNodeStart(pctx, cancelPCtx, scaleEvent, okChan, errChan)
+	if err != nil {
+		return err
 	}
 
+	logger.InfoLog.Printf("Started %s", scaleEvent.NodeName)
 	logger.InfoLog.Printf("Waiting for %s to join kubernetes cluster", scaleEvent.NodeName)
 
 	kctx, cancelKCtx := context.WithTimeout(
@@ -235,23 +253,18 @@ ptimeout:
 	)
 	defer cancelKCtx()
 
-	go scaler.Kubernetes.WaitForJoin(
+	go scaler.Kubernetes.CheckForNodeJoin(
 		kctx,
-		ok,
+		okChan,
 		scaleEvent.NodeName,
 	)
 
-ktimeout:
-	select {
-	case <-kctx.Done():
-		cancelKCtx()
-		return fmt.Errorf("timed out waiting for %s to join kubernetes cluster", scaleEvent.NodeName)
-
-	case <-ok:
-		break ktimeout
+	err = waitForNodeJoin(kctx, cancelKCtx, scaleEvent, okChan)
+	if err != nil {
+		return err
 	}
 
-	logger.InfoLog.Printf("%s joined kcluster", scaleEvent.NodeName)
+	logger.InfoLog.Printf("%s joined kubernetes cluster", scaleEvent.NodeName)
 
 	return nil
 }
@@ -262,12 +275,7 @@ func (scaler *Scaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) err
 		return err
 	}
 
-	err = scaler.Proxmox.DeleteKpNode(scaleEvent.NodeName, *scaler.Config.KpNodeNameRegex)
-	if err != nil {
-		return err
-	}
-
-	return err
+	return scaler.Proxmox.DeleteKpNode(scaleEvent.NodeName, *scaler.Config.KpNodeNameRegex)
 }
 
 func (scaler *Scaler) NumKpNodes() (int, error) {
@@ -279,6 +287,8 @@ func (scaler *Scaler) NumKpNodes() (int, error) {
 	return len(kpNodes), err
 }
 
+// This function is only used when it is unclear whether a node has joined the kubernetes cluster
+// ie when cleaning up after a failed scaling event
 func (scaler *Scaler) DeleteKpNode(kpNodeName string) error {
 	_ = scaler.Kubernetes.DeleteKpNode(kpNodeName)
 
@@ -370,7 +380,11 @@ func (scaler *Scaler) assessScaleDownForResourceType(currentResourceAllocated fl
 		return false
 	}
 
+	// The proportion of the cluster's total allocatable resources currently allocated
+	// represented as a float between 0 and 1
 	totalResourceLoad := currentResourceAllocated / float64(totalResourceAllocatable)
+	// The expected allocatable resources of the cluster after scaledown minus the
+	// requested load headroom.
 	acceptableResourceLoadForScaleDown := (float64(numKpNodes-1) / float64(numKpNodes)) -
 		(totalResourceLoad * scaler.Config.KpLoadHeadroom)
 
@@ -379,7 +393,7 @@ func (scaler *Scaler) assessScaleDownForResourceType(currentResourceAllocated fl
 
 func (scaler *Scaler) SelectScaleDownTarget(scaleEvent *ScaleEvent, allocatedResources map[string]*kubernetes.AllocatedResources, kpNodes []apiv1.Node) error {
 	if scaleEvent.ScaleType != -1 {
-		return fmt.Errorf("expected ScaleEvent ScaleType to be4 '-1' but got: %d", scaleEvent.ScaleType)
+		return fmt.Errorf("expected ScaleEvent ScaleType to be '-1' but got: %d", scaleEvent.ScaleType)
 	}
 
 	nodeLoads := make(map[string]float64)
