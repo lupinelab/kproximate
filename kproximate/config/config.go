@@ -10,6 +10,7 @@ import (
 
 type KproximateConfig struct {
 	KpNodeCores        int    `env:"kpNodeCores"`
+	KpNodeDisableSsh   bool   `env:"kpNodeDisableSsh"`
 	KpNodeMemory       int    `env:"kpNodeMemory"`
 	KpNodeNamePrefix   string `env:"kpNodeNamePrefix"`
 	KpNodeNameRegex    regexp.Regexp

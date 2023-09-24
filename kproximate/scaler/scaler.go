@@ -55,8 +55,13 @@ func NewScaler(config config.KproximateConfig) (*Scaler, error) {
 		"ipconfig0": "ip=dhcp",
 		"memory":    config.KpNodeMemory,
 		"onboot":    1,
-		"sshkeys":   strings.Replace(url.QueryEscape(config.SshKey), "+", "%20", 1),
 	}
+
+	if !config.KpNodeDisableSsh {
+		config.KpNodeParams["sshkeys"] = strings.Replace(url.QueryEscape(config.SshKey), "+", "%20", 1)
+	}
+
+	logger.InfoLog.Print(config.KpNodeParams)
 
 	scaler := Scaler{
 		Config:     config,

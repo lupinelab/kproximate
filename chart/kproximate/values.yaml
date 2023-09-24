@@ -8,13 +8,16 @@ kproximate:
     ## event is declared to have failed.
     waitSecondsForJoin: 120
 
-    ## The required headroom used in scale down calculations expressed as value between 0
+    ## The required headroom used in scale down calculations expressed as a value between 0
     ## and 1. If a value below 0.2 is specified it will be ignored and the default value
     ## is used.
     loadHeadroom: 0.2
 
     ## The number of cores assigned to new kproximate nodes.
     kpNodeCores: 2
+
+    ## Set true to disable SSH key injection.
+    kpNodeDisableSsh: false
 
     ## The amount of memory assigned to new kproximate nodes in MiB.
     kpNodeMemory: 2048
@@ -60,7 +63,7 @@ kproximate:
     rabbitmqPassword: null ## Required
 
     ## The SSH public key to inject into the kproximate template.
-    sshKey: None
+    sshKey: ""
 
 workerReplicaCount: 3
 
