@@ -34,7 +34,7 @@ func NewScaler(config config.KproximateConfig) (*Scaler, error) {
 	if err != nil {
 		return nil, err
 	}
-	proxmox, err := proxmox.NewProxmoxClient(config.PmUrl, config.PmAllowInsecure, config.PmUserID, config.PmToken, config.PmDebug)
+	proxmox, err := proxmox.NewProxmoxClient(config.PmUrl, config.PmAllowInsecure, config.PmUserID, config.PmToken, config.PmPassword, config.PmDebug)
 	if err != nil {
 		return nil, err
 	}

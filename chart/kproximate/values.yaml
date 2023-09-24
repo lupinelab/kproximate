@@ -37,7 +37,7 @@ kproximate:
     ## The Proxmox API URL.
     pmUrl: null ## Required
 
-    ## The Proxmox API token ID.
+    ## The Proxmox API token ID or user ID.
     pmUserID: null ## Required
 
     ## The number of seconds between polls of the cluster for scaling.
@@ -50,8 +50,11 @@ kproximate:
     rabbitMQPort: 5671
 
   secrets:
-    ## The Proxmox API token.
-    pmToken: null ## Required
+    ## The user's Proxmox password
+    pmPassword: "" ## Required if pmToken not set
+
+    ## The Proxmox API token for the token ID.
+    pmToken: "" ## Required if pmPassword not set
     
     ## The password to use to configure and access rabbitmq.
     rabbitmqPassword: null ## Required

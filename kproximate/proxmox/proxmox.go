@@ -31,14 +31,14 @@ type VmInformation struct {
 	Name    string  `json:"name"`
 	Cpu     float64 `json:"cpu"`
 	CpuType string  `json:"cputype"`
-	Status  string  `json:"status"`  // stopped | running
-	MaxMem  int64   `json:"maxmem"`  // in bytes
-	Mem     int64   `json:"mem"`     // In bytes
-	MaxDisk int64   `json:"maxdisk"` // In bytes
+	Status  string  `json:"status"`
+	MaxMem  int64   `json:"maxmem"`
+	Mem     int64   `json:"mem"`
+	MaxDisk int64   `json:"maxdisk"`
 	NetIn   int64   `json:"netin"`
 	NetOut  int64   `json:"netout"`
 	Node    string  `json:"node"`
-	Uptime  int     `json:"uptime"` // in seconds
+	Uptime  int     `json:"uptime"`
 }
 
 type Proxmox interface {
@@ -55,13 +55,27 @@ type ProxmoxClient struct {
 	client *proxmox.Client
 }
 
-func NewProxmoxClient(pm_url string, allowInsecure bool, pmUser string, pmToken string, debug bool) (ProxmoxClient, error) {
+var userRequiresTokenRegex = regexp.MustCompile("[a-z0-9]+@[a-z0-9]+![a-z0-9]+")
+
+func userRequiresAPIToken(pmUser string) bool {
+	return userRequiresTokenRegex.MatchString(pmUser)
+}
+
+func NewProxmoxClient(pm_url string, allowInsecure bool, pmUser string, pmToken string, pmPassword string, debug bool) (ProxmoxClient, error) {
 	tlsconf := &tls.Config{InsecureSkipVerify: allowInsecure}
 	newClient, err := proxmox.NewClient(pm_url, nil, "", tlsconf, "", 300)
 	if err != nil {
 		return ProxmoxClient{}, err
 	}
-	newClient.SetAPIToken(pmUser, pmToken)
+
+	if userRequiresAPIToken(pmUser) {
+		newClient.SetAPIToken(pmUser, pmToken)
+	} else {
+		err = newClient.Login(pmUser, pmPassword, "")
+		if err != nil {
+			return ProxmoxClient{}, err
+		}
+	}
 
 	proxmox.Debug = &debug
 
