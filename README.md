@@ -6,7 +6,7 @@ A node autoscaler project for Proxmox allowing a Kubernetes cluster to dynamical
 * Assesses the resource requirements from the requests of the unschedulable pods
 * Provisions VMs from a user defined template
 * User configurable cpu, memory and ssh key for provisioned VMs
-* Removes nodes when requested resources can be satisfied by few VMs
+* Removes nodes when requested resources can be satisfied by fewer VMs
 
 The operator is required to create a Proxmox template configured to join the kubernetes cluster automatically on it's first boot. All examples show how to do this with K3S, however other kubernetes cluster flavours theoretically could be used if you are prepared to put in the work to build an appropriate template.
 
@@ -39,4 +39,4 @@ To select a Proxmox host for a new kproximate node all Proxmox hosts in the clus
 If no host has been selected after all hosts have been assessed then the host with the most available memory is selected.
 
 ## Scaling Down
-Scaling down is very agressive. When the cluster is not scaling and the cluster's load is calculated to be satisfiable by n-1 nodes while also remaining within the configured load headroom value a negative scale event is triggered. The node with the least allocated resources is selected and all pods are evicted from it before it is removed from the cluster and deleted.
+Scaling down is very agressive. When the cluster is not scaling and the cluster's load is calculated to be satisfiable by n-1 nodes while also remaining within the configured load headroom value then a negative scale event is triggered. The node with the least allocated resources is selected and all pods are evicted from it before it is removed from the cluster and deleted.
