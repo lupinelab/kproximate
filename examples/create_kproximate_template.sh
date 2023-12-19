@@ -62,8 +62,7 @@ else
     qm set $VMID --net0 virtio,bridge=vmbr0,firewall=1
 fi
 qm set $VMID --efidisk0 $STORAGE:0
-qm importdisk $VMID $NEWDISK $STORAGE
-qm set $VMID --scsihw virtio-scsi-single --scsi0 ${STORAGE}:$VMID/vm-${VMID}-disk-1.raw,cache=writeback,discard=on,iothread=1,ssd=1
+qm set $VMID --scsihw virtio-scsi-single --scsi0 ${STORAGE}:0,import-from=$(realpath ${NEWDISK}),cache=writeback,discard=on,iothread=1,ssd=1
 qm set $VMID --boot order=scsi0
 qm set $VMID --scsi1 $STORAGE:cloudinit
 qm set $VMID --ipconfig0 ip=dhcp
