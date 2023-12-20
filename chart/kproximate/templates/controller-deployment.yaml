@@ -25,7 +25,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: "{{ .Chart.Name }}-controller"
-          image: "lupinelab/kproximate-controller:{{ .Chart.AppVersion }}"
+          image: "{{ .Values.image.registry }}/kproximate-controller:{{ .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
           - configMapRef:
