@@ -107,6 +107,7 @@ rabbitmq:
       effect: NoSchedule
 
 image:
+  registry: lupinelab
   pullPolicy: IfNotPresent
 
 nameOverride: ""
