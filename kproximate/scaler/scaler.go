@@ -61,8 +61,6 @@ func NewScaler(config config.KproximateConfig) (*Scaler, error) {
 		config.KpNodeParams["sshkeys"] = strings.Replace(url.QueryEscape(config.SshKey), "+", "%20", 1)
 	}
 
-	logger.InfoLog.Print(config.KpNodeParams)
-
 	scaler := Scaler{
 		Config:     config,
 		Kubernetes: &kubernetes,
@@ -208,6 +206,20 @@ func waitForNodeStart(ctx context.Context, cancel context.CancelFunc, scaleEvent
 	}
 }
 
+func waitForNodeReady(ctx context.Context, cancel context.CancelFunc, scaleEvent *ScaleEvent, ok chan (bool), errchan chan (error)) error {
+	select {
+	case <-ctx.Done():
+		cancel()
+		return fmt.Errorf("timed out waiting for %s to be ready", scaleEvent.NodeName)
+
+	case err := <-errchan:
+		return err
+
+	case <-ok:
+		return nil
+	}
+}
+
 func waitForNodeJoin(ctx context.Context, cancel context.CancelFunc, scaleEvent *ScaleEvent, ok chan (bool)) error {
 	select {
 	case <-ctx.Done():
@@ -227,7 +239,14 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 	errChan := make(chan error)
 	defer close(errChan)
 
-	pctx, cancelPCtx := context.WithTimeout(ctx, time.Duration(time.Second*20))
+	pctx, cancelPCtx := context.WithTimeout(
+		ctx,
+		time.Duration(
+			time.Second*time.Duration(
+				scaler.Config.WaitSecondsForProvision,
+			),
+		),
+	)
 	defer cancelPCtx()
 
 	go scaler.Proxmox.NewKpNode(
@@ -238,6 +257,7 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 		scaleEvent.TargetHost.Node,
 		scaler.Config.KpNodeParams,
 		scaler.Config.KpNodeTemplateRef,
+		scaler.Config.KpJoinCommand,
 	)
 
 	err := waitForNodeStart(pctx, cancelPCtx, scaleEvent, okChan, errChan)
@@ -246,6 +266,21 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 	}
 
 	logger.InfoLog.Printf("Started %s", scaleEvent.NodeName)
+
+	if scaler.Config.KpQemuExecJoin {
+		go scaler.Proxmox.CheckNodeReady(pctx, okChan, errChan, scaleEvent.NodeName)
+		
+		err := waitForNodeReady(pctx, cancelPCtx, scaleEvent, okChan, errChan)
+		if err != nil {
+			return err
+		}
+
+		err = scaler.JoinByQemuExec(scaleEvent.NodeName)
+		if err != nil {
+			return err
+		}
+	}
+
 	logger.InfoLog.Printf("Waiting for %s to join kubernetes cluster", scaleEvent.NodeName)
 
 	kctx, cancelKCtx := context.WithTimeout(
@@ -272,6 +307,40 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 	logger.InfoLog.Printf("%s joined kubernetes cluster", scaleEvent.NodeName)
 
 	return nil
+}
+
+func (scaler *Scaler) JoinByQemuExec(nodeName string) error {
+	logger.InfoLog.Printf("Executing join command on %s", nodeName)
+		joinExecPid, err := scaler.Proxmox.QemuExecJoin(
+			scaler.Config.PmUrl,
+			scaler.Config.PmUserID,
+			scaler.Config.PmToken,
+			scaler.Config.PmAllowInsecure,
+			nodeName,
+			scaler.Config.KpJoinCommand,
+		)
+		
+		if err != nil {
+			return err
+		}
+
+		var status proxmox.QemuExecStatus
+		
+		for status.Exited != 1 {
+			status, err = scaler.Proxmox.GetQemuExecJoinStatus(nodeName, joinExecPid)
+			if err != nil {
+				return err
+			}
+			
+			time.Sleep(time.Second * 1)
+		}
+		
+		if status.ExitCode != 0 {
+			return fmt.Errorf("join command for %s failed: %s", nodeName, status.OutData)
+		} else {
+			logger.InfoLog.Printf("Join command for %s executed successfully", nodeName)
+			return nil
+		}
 }
 
 func (scaler *Scaler) NumKpNodes() (int, error) {

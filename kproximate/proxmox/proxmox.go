@@ -3,8 +3,12 @@ package proxmox
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Telmate/proxmox-api-go/proxmox"
@@ -41,14 +45,24 @@ type VmInformation struct {
 	Uptime  int     `json:"uptime"`
 }
 
+type QemuExecStatus struct {
+	Exited   int    `mapstructure:"exited"`
+	ExitCode int    `mapstructure:"exitcode"`
+	ErrData  string `mapstructure:"err-data"`
+	OutData  string `mapstructure:"out-data"`
+}
+
 type Proxmox interface {
 	GetClusterStats() ([]HostInformation, error)
 	GetRunningKpNodes(regexp.Regexp) ([]VmInformation, error)
 	GetAllKpNodes(regexp.Regexp) ([]VmInformation, error)
-	GetKpNode(name string, kpNodeName regexp.Regexp) (VmInformation, error)
-	GetKpNodeTemplateRef(kpnodeTemplateName string) (*proxmox.VmRef, error)
-	NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef)
+	GetKpNode(name string, kpNodeNameRegex regexp.Regexp) (VmInformation, error)
+	GetKpNodeTemplateRef(kpNodeTemplateName string) (*proxmox.VmRef, error)
+	NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef, kpJoinCommand string)
+	QemuExecJoin(pmUrl string, pmUserID string, pmToken string, allowInsecure bool, nodeName string, joinCommand string) (int, error)
 	DeleteKpNode(name string, kpnodeName regexp.Regexp) error
+	GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error)
+	CheckNodeReady(ctx context.Context, okchan chan<- bool, errchan chan<- error, nodeName string)
 }
 
 type ProxmoxClient struct {
@@ -96,13 +110,13 @@ func (p *ProxmoxClient) GetClusterStats() ([]HostInformation, error) {
 
 	err = mapstructure.Decode(hostList, &pHosts)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
 	return pHosts, nil
 }
 
-func (p *ProxmoxClient) GetRunningKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
+func (p *ProxmoxClient) GetRunningKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmInformation, error) {
 	vmlist, err := p.client.GetVmList()
 	if err != nil {
 		return []VmInformation{}, err
@@ -112,13 +126,13 @@ func (p *ProxmoxClient) GetRunningKpNodes(kpNodeName regexp.Regexp) ([]VmInforma
 
 	err = mapstructure.Decode(vmlist, &kpnodes)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
 	var kpNodes []VmInformation
 
 	for _, vm := range kpnodes.Data {
-		if kpNodeName.MatchString(vm.Name) && vm.Status == "running" {
+		if kpNodeNameRegex.MatchString(vm.Name) && vm.Status == "running" {
 			kpNodes = append(kpNodes, vm)
 		}
 	}
@@ -126,7 +140,7 @@ func (p *ProxmoxClient) GetRunningKpNodes(kpNodeName regexp.Regexp) ([]VmInforma
 	return kpNodes, nil
 }
 
-func (p *ProxmoxClient) GetAllKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
+func (p *ProxmoxClient) GetAllKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmInformation, error) {
 	vmlist, err := p.client.GetVmList()
 	if err != nil {
 		return nil, err
@@ -142,7 +156,7 @@ func (p *ProxmoxClient) GetAllKpNodes(kpNodeName regexp.Regexp) ([]VmInformation
 	var kpNodes []VmInformation
 
 	for _, vm := range kpnodes.Data {
-		if kpNodeName.MatchString(vm.Name) {
+		if kpNodeNameRegex.MatchString(vm.Name) {
 			kpNodes = append(kpNodes, vm)
 		}
 	}
@@ -150,16 +164,14 @@ func (p *ProxmoxClient) GetAllKpNodes(kpNodeName regexp.Regexp) ([]VmInformation
 	return kpNodes, err
 }
 
-func (p *ProxmoxClient) GetKpNode(name string, kpNodeName regexp.Regexp) (VmInformation, error) {
-	kpNodes, err := p.GetAllKpNodes(kpNodeName)
+func (p *ProxmoxClient) GetKpNode(kpNodeName string, kpNodeNameRegex regexp.Regexp) (VmInformation, error) {
+	kpNodes, err := p.GetAllKpNodes(kpNodeNameRegex)
 	if err != nil {
 		return VmInformation{}, err
 	}
 
-	nodeName := regexp.MustCompile(name)
-
 	for _, vm := range kpNodes {
-		if nodeName.MatchString(vm.Name) {
+		if vm.Name == kpNodeName {
 			return vm, err
 		}
 	}
@@ -178,12 +190,13 @@ func (p *ProxmoxClient) GetKpNodeTemplateRef(kpNodeTemplateName string) (*proxmo
 
 func (p *ProxmoxClient) NewKpNode(
 	ctx context.Context,
-	ok chan<- bool,
+	okchan chan<- bool,
 	errchan chan<- error,
 	newKpNodeName string,
 	targetNode string,
 	kpNodeParams map[string]interface{},
 	kpNodeTemplate proxmox.VmRef,
+	kpJoinCommand string,
 ) {
 	nextID, err := p.client.GetNextID(kpNodeTemplate.VmId())
 	if err != nil {
@@ -225,7 +238,102 @@ func (p *ProxmoxClient) NewKpNode(
 		break
 	}
 
-	ok <- true
+	okchan <- true
+}
+
+func (p *ProxmoxClient) CheckNodeReady(ctx context.Context, okchan chan<- bool, errchan chan<- error, nodeName string) {
+	vmRef, err := p.client.GetVmRefByName(nodeName)
+	if err != nil {
+		errchan <- err
+	}
+
+	_, pingErr := p.client.QemuAgentPing(vmRef)
+
+	for pingErr != nil {
+		_, pingErr = p.client.QemuAgentPing(vmRef)
+		time.Sleep(time.Second * 1)
+	}
+
+	okchan <- true
+}
+
+func (p *ProxmoxClient) QemuExecJoin(pmUrl string, pmUserID string, pmToken string, allowInsecure bool, nodeName string, joinCommand string) (int, error) {
+	// Currently the QemuAgentExec exec method in proxmox-api-go is broken so we must construct our own http client and make the request manually.
+	vmRef, err := p.client.GetVmRefByName(nodeName)
+	if err != nil {
+		return 0, err
+	}
+
+	joinParams := url.Values{}
+	joinParams.Add("command", "bash")
+	joinParams.Add("command", "-c")
+	joinParams.Add("command", joinCommand)
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+
+	joinClient := &http.Client{
+		Transport: tr,
+	}
+
+	endpoint := fmt.Sprintf("%s/nodes/%s/qemu/%d/agent/exec", pmUrl, vmRef.Node(), vmRef.VmId())
+
+	req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(joinParams.Encode()))
+	if err != nil {
+		return 0, err
+	}
+
+	req.Close = true
+
+	req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", pmUserID, pmToken))
+
+	resp, err := joinClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+
+	defer resp.Body.Close()
+
+	type Data struct {
+		Pid int `json:"pid"`
+	}
+
+	type Response struct {
+		RespData Data `json:"data"`
+	}
+
+	var response Response
+
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return 0, err
+	}
+
+	return response.RespData.Pid, err
+}
+
+func (p *ProxmoxClient) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error) {
+	vmRef, err := p.client.GetVmRefByName(nodeName)
+	if err != nil {
+		return QemuExecStatus{}, err
+	}
+
+	execStatus, err := p.client.GetExecStatus(vmRef, fmt.Sprintf("%d", pid))
+	if err != nil {
+		return QemuExecStatus{}, err
+	}
+
+	var status QemuExecStatus
+
+	err = mapstructure.Decode(execStatus, &status)
+	if err != nil {
+		return QemuExecStatus{}, err
+	}
+
+	return status, err
 }
 
 func (p *ProxmoxClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {

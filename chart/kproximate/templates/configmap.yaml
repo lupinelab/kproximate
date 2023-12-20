@@ -8,6 +8,7 @@ data:
   kpNodeMemory: {{ .Values.kproximate.config.kpNodeMemory | quote }}
   kpNodeNamePrefix: {{ .Values.kproximate.config.kpNodeNamePrefix | quote }}
   kpNodeTemplateName: {{ .Values.kproximate.config.kpNodeTemplateName | quote | required ".Values.kproximate.config.kpNodeTemplateName is required" }}
+  kpQemuExecJoin: {{ .Values.kproximate.config.kpQemuExecJoin | quote }}
   loadHeadroom: {{ .Values.kproximate.config.loadHeadroom | quote }}
   maxKpNodes: {{ .Values.kproximate.config.maxKpNodes | quote }}
   pmAllowInsecure: {{ .Values.kproximate.config.pmAllowInsecure | quote }}
@@ -19,3 +20,4 @@ data:
   rabbitMQPort: {{ .Values.kproximate.config.rabbitMQPort | quote }}
   rabbitMQUser: {{ .Values.rabbitmq.auth.username | quote }}
   waitSecondsForJoin: {{ .Values.kproximate.config.waitSecondsForJoin | quote }}
+  waitSecondsForProvision: {{ .Values.kproximate.config.waitSecondsForProvision | quote }}
