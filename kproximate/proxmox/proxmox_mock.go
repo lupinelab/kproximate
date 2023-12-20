@@ -76,11 +76,25 @@ func (p *ProxmoxMockClient) GetKpNodeTemplateRef(kpNodeTemplateName string) (*pr
 	return &proxmox.VmRef{}, err
 }
 
-func (p *ProxmoxMockClient) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef) {
+func (p *ProxmoxMockClient) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef, kpJoinCommand string) {
 
 }
 
 func (p *ProxmoxMockClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {
 	err := errors.New("")
 	return err
+}
+
+func (p *ProxmoxMockClient) QemuExecJoin(pmUrl string, pmUserID string, pmToken string, allowInsecure bool, nodeName string, joinCommand string) (int, error) {
+	err := errors.New("")
+	return 0, err
+}
+
+func (p *ProxmoxMockClient) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error) {
+	err := errors.New("")
+	return QemuExecStatus{}, err
+}
+
+func (p *ProxmoxMockClient) CheckNodeReady(ctx context.Context, okchan chan<- bool, errchan chan<- error, nodeName string) {
+
 }

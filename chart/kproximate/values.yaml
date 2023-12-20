@@ -4,9 +4,13 @@
 
 kproximate:
   config:
-    ## The period to wait for a new node to join the kubernetes cluster before the scaling 
+    ## The period to wait for a provisioned node to join the kubernetes cluster before the scaling 
     ## event is declared to have failed.
     waitSecondsForJoin: 120
+
+    ## The period to wait for a new node to be provisioned and declared ready before the scaling 
+    ## event is declared to have failed.
+    waitSecondsForProvision: 120
 
     ## The required headroom used in scale down calculations expressed as a value between 0
     ## and 1. If a value below 0.2 is specified it will be ignored and the default value
@@ -27,6 +31,9 @@ kproximate:
 
     ## The name of the Proxmox template to use for new kproximate nodes.
     kpNodeTemplateName: null ## Required
+
+    ## Set true to use Qemu-Exec to join nodes to the kubernetes cluster.
+    kpQemuExecJoin: false
     
     ## The maximum number of kproximate nodes allowed.
     maxKpNodes: 3
@@ -53,6 +60,9 @@ kproximate:
     rabbitMQPort: 5671
 
   secrets:
+    ## The command to use to join worker nodes to the kubernetes cluster.
+    kpJoinCommand: "" 
+    
     ## The user's Proxmox password
     pmPassword: "" ## Required if pmToken not set
 

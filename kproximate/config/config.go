@@ -9,25 +9,28 @@ import (
 )
 
 type KproximateConfig struct {
-	KpNodeCores        int    `env:"kpNodeCores"`
-	KpNodeDisableSsh   bool   `env:"kpNodeDisableSsh"`
-	KpNodeMemory       int    `env:"kpNodeMemory"`
-	KpNodeNamePrefix   string `env:"kpNodeNamePrefix"`
-	KpNodeNameRegex    regexp.Regexp
-	KpNodeParams       map[string]interface{}
-	KpNodeTemplateName string `env:"kpNodeTemplateName"`
-	KpNodeTemplateRef  proxmox.VmRef
-	LoadHeadroom       float64 `env:"loadHeadroom"`
-	MaxKpNodes         int     `env:"maxKpNodes"`
-	PmAllowInsecure    bool    `env:"pmAllowInsecure"`
-	PmDebug            bool    `env:"pmDebug"`
-	PmPassword         string  `env:"pmPassword"`
-	PmToken            string  `env:"pmToken"`
-	PmUrl              string  `env:"pmUrl"`
-	PmUserID           string  `env:"pmUserID"`
-	PollInterval       int     `env:"pollInterval"`
-	SshKey             string  `env:"sshKey"`
-	WaitSecondsForJoin int     `env:"waitSecondsForJoin"`
+	KpJoinCommand           string `env:"kpJoinCommand"`
+	KpNodeCores             int    `env:"kpNodeCores"`
+	KpNodeDisableSsh        bool   `env:"kpNodeDisableSsh"`
+	KpNodeMemory            int    `env:"kpNodeMemory"`
+	KpNodeNamePrefix        string `env:"kpNodeNamePrefix"`
+	KpNodeNameRegex         regexp.Regexp
+	KpNodeParams            map[string]interface{}
+	KpNodeTemplateName      string `env:"kpNodeTemplateName"`
+	KpNodeTemplateRef       proxmox.VmRef
+	KpQemuExecJoin          bool    `env:"kpQemuExecJoin"`
+	LoadHeadroom            float64 `env:"loadHeadroom"`
+	MaxKpNodes              int     `env:"maxKpNodes"`
+	PmAllowInsecure         bool    `env:"pmAllowInsecure"`
+	PmDebug                 bool    `env:"pmDebug"`
+	PmPassword              string  `env:"pmPassword"`
+	PmToken                 string  `env:"pmToken"`
+	PmUrl                   string  `env:"pmUrl"`
+	PmUserID                string  `env:"pmUserID"`
+	PollInterval            int     `env:"pollInterval"`
+	SshKey                  string  `env:"sshKey"`
+	WaitSecondsForJoin      int     `env:"waitSecondsForJoin"`
+	WaitSecondsForProvision int     `env:"waitSecondsForProvision"`
 }
 
 type RabbitConfig struct {
@@ -73,5 +76,10 @@ func validateConfig(config *KproximateConfig) KproximateConfig {
 	if config.WaitSecondsForJoin < 60 {
 		config.WaitSecondsForJoin = 60
 	}
+	
+	if config.WaitSecondsForProvision < 60 {
+		config.WaitSecondsForProvision = 60
+	}
+
 	return *config
 }

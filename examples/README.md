@@ -44,6 +44,24 @@ Example:
 
 ```./create_kproximate_template.sh jammy 600```
 
+### Join via qemu-exec (***experimental***)
+
+You may also create a template that does not automatically join the cluster on first boot and instead is triggered to join the cluster via qemu-exec. The [create_kproximate_template_exec.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template_exec.sh) script is exactly the same as the standard template but omits the firstboot-command.
+
+The benefits of this are that the template does not contain secrets and can also be re-used accross mutliple clusters. The join secrets will be stored in the kubernetes secret under the key `kpJoinCommand`.
+
+If using this method you must supply the following values:
+
+```yaml
+kproximate:
+  config:
+    kpQemuExecJoin: true
+  secrets:
+    kpJoinCommand: "<your-join-command>"
+```
+ 
+The value of `kpJoinCommand` is executed on the new node as follows: `bash -c <your-join-command>`.
+
 ### Custom templates
 
 If creating your own template please consider the following:
