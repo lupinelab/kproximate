@@ -8,7 +8,7 @@ There are four main requirements for configuring and deploying kproximate:
 
 ## Proxmox API Access
 
-The [create_kproximate_api_token.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_api_token.sh) script can be run on a Proxmox host to create a token with the required privileges, it will return the token ID and token which will be required later.
+The [create_kproximate_api_token.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_proxmox_api_token.sh) script can be run on a Proxmox host to create a token with the required privileges, it will return the token ID and token which will be required later.
 
 A custom user/token can be used, however the below privileges must be granted to it:
 
