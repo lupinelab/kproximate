@@ -3,12 +3,8 @@ package proxmox
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/Telmate/proxmox-api-go/proxmox"
@@ -45,6 +41,10 @@ type VmInformation struct {
 	Uptime  int     `json:"uptime"`
 }
 
+type QemuExecResponse struct {
+	Pid int `json:"pid"`
+}
+
 type QemuExecStatus struct {
 	Exited   int    `mapstructure:"exited"`
 	ExitCode int    `mapstructure:"exitcode"`
@@ -59,8 +59,8 @@ type Proxmox interface {
 	GetKpNode(name string, kpNodeNameRegex regexp.Regexp) (VmInformation, error)
 	GetKpNodeTemplateRef(kpNodeTemplateName string) (*proxmox.VmRef, error)
 	NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef, kpJoinCommand string)
-	QemuExecJoin(pmUrl string, pmUserID string, pmToken string, allowInsecure bool, nodeName string, joinCommand string) (int, error)
 	DeleteKpNode(name string, kpnodeName regexp.Regexp) error
+	QemuExecJoin(nodeName string, joinCommand string) (int, error)
 	GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error)
 	CheckNodeReady(ctx context.Context, okchan chan<- bool, errchan chan<- error, nodeName string)
 }
@@ -257,62 +257,29 @@ func (p *ProxmoxClient) CheckNodeReady(ctx context.Context, okchan chan<- bool, 
 	okchan <- true
 }
 
-func (p *ProxmoxClient) QemuExecJoin(pmUrl string, pmUserID string, pmToken string, allowInsecure bool, nodeName string, joinCommand string) (int, error) {
-	// Currently the QemuAgentExec exec method in proxmox-api-go is broken so we must construct our own http client and make the request manually.
+func (p *ProxmoxClient) QemuExecJoin(nodeName string, joinCommand string) (int, error) {
 	vmRef, err := p.client.GetVmRefByName(nodeName)
 	if err != nil {
 		return 0, err
 	}
 
-	joinParams := url.Values{}
-	joinParams.Add("command", "bash")
-	joinParams.Add("command", "-c")
-	joinParams.Add("command", joinCommand)
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
+	params := map[string]interface{}{
+		"command": []string{"bash", "-c", joinCommand},
 	}
 
-	joinClient := &http.Client{
-		Transport: tr,
-	}
-
-	endpoint := fmt.Sprintf("%s/nodes/%s/qemu/%d/agent/exec", pmUrl, vmRef.Node(), vmRef.VmId())
-
-	req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(joinParams.Encode()))
+	result, err := p.client.QemuAgentExec(vmRef, params)
 	if err != nil {
 		return 0, err
 	}
 
-	req.Close = true
+	var response QemuExecResponse
 
-	req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", pmUserID, pmToken))
-
-	resp, err := joinClient.Do(req)
+	err = mapstructure.Decode(result, &response)
 	if err != nil {
 		return 0, err
 	}
 
-	defer resp.Body.Close()
-
-	type Data struct {
-		Pid int `json:"pid"`
-	}
-
-	type Response struct {
-		RespData Data `json:"data"`
-	}
-
-	var response Response
-
-	err = json.NewDecoder(resp.Body).Decode(&response)
-	if err != nil {
-		return 0, err
-	}
-
-	return response.RespData.Pid, err
+	return response.Pid, err
 }
 
 func (p *ProxmoxClient) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error) {

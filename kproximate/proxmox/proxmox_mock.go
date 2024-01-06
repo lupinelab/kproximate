@@ -85,7 +85,7 @@ func (p *ProxmoxMockClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) 
 	return err
 }
 
-func (p *ProxmoxMockClient) QemuExecJoin(pmUrl string, pmUserID string, pmToken string, allowInsecure bool, nodeName string, joinCommand string) (int, error) {
+func (p *ProxmoxMockClient) QemuExecJoin(nodeName string, joinCommand string) (int, error) {
 	err := errors.New("")
 	return 0, err
 }
