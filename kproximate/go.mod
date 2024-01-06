@@ -3,7 +3,7 @@ module github.com/lupinelab/kproximate
 go 1.19
 
 require (
-	github.com/Telmate/proxmox-api-go v0.0.0-20231207182448-31826f2fdc39
+	github.com/Telmate/proxmox-api-go v0.0.0-20240104223041-db65649202d0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/rabbitmq/amqp091-go v1.8.1
 	github.com/sethvargo/go-envconfig v0.9.0

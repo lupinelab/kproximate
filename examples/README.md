@@ -15,6 +15,7 @@ A custom user/token can be used, however the below privileges must be granted to
 * Datastore.AllocateSpace
 * Datastore.Audit
 * Sys.Audit
+* SDN.Use
 * VM.Allocate
 * VM.Audit
 * VM.Clone
@@ -24,6 +25,7 @@ A custom user/token can be used, however the below privileges must be granted to
 * VM.Config.Memory
 * VM.Config.Network
 * VM.Config.Options
+* VM.Monitor
 * VM.PowerMgmt
 
 Alternatively you may use password authentication with a user that has the above permissions granted to it.
@@ -46,9 +48,9 @@ Example:
 
 ### Join via qemu-exec (***experimental***)
 
-You may also create a template that does not automatically join the cluster on first boot and instead is triggered to join the cluster via qemu-exec. The [create_kproximate_template_exec.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template_exec.sh) script is exactly the same as the standard template but omits the firstboot-command.
+You may also create a template that does not automatically join the cluster on first boot and instead is triggered to join the cluster via qemu-exec. The [create_kproximate_template_exec.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template_exec.sh) script is exactly the same as the standard script but omits the firstboot-command.
 
-The benefits of this are that the template does not contain secrets and can also be re-used accross mutliple clusters. The join secrets will be stored in the kubernetes secret under the key `kpJoinCommand`.
+The benefits of this are that the template does not contain secrets and can also be re-used accross mutliple clusters.
 
 If using this method you must supply the following values:
 

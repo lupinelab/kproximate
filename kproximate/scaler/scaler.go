@@ -311,36 +311,28 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 
 func (scaler *Scaler) JoinByQemuExec(nodeName string) error {
 	logger.InfoLog.Printf("Executing join command on %s", nodeName)
-		joinExecPid, err := scaler.Proxmox.QemuExecJoin(
-			scaler.Config.PmUrl,
-			scaler.Config.PmUserID,
-			scaler.Config.PmToken,
-			scaler.Config.PmAllowInsecure,
-			nodeName,
-			scaler.Config.KpJoinCommand,
-		)
-		
+	joinExecPid, err := scaler.Proxmox.QemuExecJoin(nodeName, scaler.Config.KpJoinCommand)
+	if err != nil {
+		return err
+	}
+
+	var status proxmox.QemuExecStatus
+	
+	for status.Exited != 1 {
+		status, err = scaler.Proxmox.GetQemuExecJoinStatus(nodeName, joinExecPid)
 		if err != nil {
 			return err
 		}
-
-		var status proxmox.QemuExecStatus
 		
-		for status.Exited != 1 {
-			status, err = scaler.Proxmox.GetQemuExecJoinStatus(nodeName, joinExecPid)
-			if err != nil {
-				return err
-			}
-			
-			time.Sleep(time.Second * 1)
-		}
-		
-		if status.ExitCode != 0 {
-			return fmt.Errorf("join command for %s failed: %s", nodeName, status.OutData)
-		} else {
-			logger.InfoLog.Printf("Join command for %s executed successfully", nodeName)
-			return nil
-		}
+		time.Sleep(time.Second * 1)
+	}
+	
+	if status.ExitCode != 0 {
+		return fmt.Errorf("join command for %s failed: %s", nodeName, status.OutData)
+	} else {
+		logger.InfoLog.Printf("Join command for %s executed successfully", nodeName)
+		return nil
+	}
 }
 
 func (scaler *Scaler) NumKpNodes() (int, error) {
