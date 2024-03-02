@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/lupinelab/kproximate/config"
-	"github.com/lupinelab/kproximate/rabbitmq"
 	"github.com/lupinelab/kproximate/logger"
+	"github.com/lupinelab/kproximate/metrics"
+	"github.com/lupinelab/kproximate/rabbitmq"
 	"github.com/lupinelab/kproximate/scaler"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -45,6 +46,8 @@ func main() {
 	go AssessScaleDown(ctx, scaler, rabbitConfig, scaleDownChannel, scaleDownQueue, mgmtClient)
 
 	logger.InfoLog.Println("Controller started")
+
+	go metrics.Serve(ctx, scaler)
 
 	<-ctx.Done()
 }
@@ -141,7 +144,7 @@ func AssessScaleDown(
 				logger.ErrorLog.Fatalf("Failed to get allocated resources: %s", err.Error())
 			}
 
-			workerNodeCapacity, err := scaler.Kubernetes.GetworkerNodesAllocatableResources()
+			workerNodeCapacity, err := scaler.Kubernetes.GetWorkerNodesAllocatableResources()
 			if err != nil {
 				logger.ErrorLog.Fatalf("Failed to get worker nodes capacity: %s", err.Error())
 			}
