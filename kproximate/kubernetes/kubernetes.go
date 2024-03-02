@@ -24,7 +24,7 @@ type Kubernetes interface {
 	GetUnschedulableResources() (*UnschedulableResources, error)
 	IsFailedSchedulingDueToControlPlaneTaint() (bool, error)
 	GetWorkerNodes() (*apiv1.NodeList, error)
-	GetworkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error)
+	GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error)
 	GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, error)
 	GetAllocatedResources(kpNodeName regexp.Regexp) (map[string]*AllocatedResources, error)
 	CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
@@ -169,9 +169,6 @@ func (k *KubernetesClient) GetWorkerNodes() (*apiv1.NodeList, error) {
 		*noControlPlaneLabel,
 		*noMasterLabel,
 	)
-	if err != nil {
-		return nil, err
-	}
 
 	nodes, err := k.client.CoreV1().Nodes().List(
 		context.TODO(),
@@ -186,7 +183,7 @@ func (k *KubernetesClient) GetWorkerNodes() (*apiv1.NodeList, error) {
 	return nodes, err
 }
 
-func (k *KubernetesClient) GetworkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error) {
+func (k *KubernetesClient) GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error) {
 	var workerNodesAllocatableResources WorkerNodesAllocatableResources
 	workerNodes, err := k.GetWorkerNodes()
 	if err != nil {

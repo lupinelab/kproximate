@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 
 	"github.com/lupinelab/kproximate/config"
-	"github.com/lupinelab/kproximate/rabbitmq"
 	"github.com/lupinelab/kproximate/logger"
+	"github.com/lupinelab/kproximate/rabbitmq"
 	"github.com/lupinelab/kproximate/scaler"
 	amqp "github.com/rabbitmq/amqp091-go"
 )

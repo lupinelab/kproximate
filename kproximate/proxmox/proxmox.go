@@ -117,27 +117,20 @@ func (p *ProxmoxClient) GetClusterStats() ([]HostInformation, error) {
 }
 
 func (p *ProxmoxClient) GetRunningKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmInformation, error) {
-	vmlist, err := p.client.GetVmList()
-	if err != nil {
-		return []VmInformation{}, err
-	}
-
-	var kpnodes vmList
-
-	err = mapstructure.Decode(vmlist, &kpnodes)
+	kpNodes, err := p.GetAllKpNodes(kpNodeNameRegex)
 	if err != nil {
 		return nil, err
 	}
 
-	var kpNodes []VmInformation
+	var runningKpNodes []VmInformation
 
-	for _, vm := range kpnodes.Data {
-		if kpNodeNameRegex.MatchString(vm.Name) && vm.Status == "running" {
-			kpNodes = append(kpNodes, vm)
+	for _, vm := range kpNodes {
+		if vm.Status == "running" {
+			runningKpNodes = append(runningKpNodes, vm)
 		}
 	}
 
-	return kpNodes, nil
+	return runningKpNodes, nil
 }
 
 func (p *ProxmoxClient) GetAllKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmInformation, error) {

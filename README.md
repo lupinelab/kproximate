@@ -40,3 +40,38 @@ If no host has been selected after all hosts have been assessed then the host wi
 
 ## Scaling Down
 Scaling down is very agressive. When the cluster is not scaling and the cluster's load is calculated to be satisfiable by n-1 nodes while also remaining within the configured load headroom value then a negative scale event is triggered. The node with the least allocated resources is selected and all pods are evicted from it before it is removed from the cluster and deleted.
+
+## Metrics
+A metrics endpoint is provided at `kproximate.kproximate.cluster.svc.local/metrics` by default. The following metrics are provided in Prometheus format with CPU measured in [CPU units](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#meaning-of-cpu) and memory measured in bytes:
+
+`kpnodes_total`
+<br>
+The total number of kproximate nodes
+
+`kpnodes_running`
+<br>
+The total number of running kproximate nodes
+
+`cpu_provisioned_total`
+<br>
+The total provisioned cpu
+
+`memory_provisioned_total`
+<br>
+The total memory provisioned
+
+`cpu_allocatable_total`
+<br>
+The total cpu allocatable
+
+`memory_allocatable_total`
+<br>
+The total memory allocatable
+
+`cpu_allocated_total`
+<br>
+The total cpu allocated
+
+`memory_allocated_total`
+<br>
+The total memory allocated
