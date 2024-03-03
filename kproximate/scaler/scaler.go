@@ -328,7 +328,7 @@ func (scaler *Scaler) JoinByQemuExec(nodeName string) error {
 	}
 	
 	if status.ExitCode != 0 {
-		return fmt.Errorf("join command for %s failed: %s", nodeName, status.OutData)
+		return fmt.Errorf("join command for %s failed:\n%s", nodeName, status.OutData)
 	} else {
 		logger.InfoLog.Printf("Join command for %s executed successfully", nodeName)
 		return nil
