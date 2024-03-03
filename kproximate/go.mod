@@ -2,8 +2,6 @@ module github.com/lupinelab/kproximate
 
 go 1.21
 
-toolchain go1.22.0
-
 require (
 	github.com/Telmate/proxmox-api-go v0.0.0-20240104223041-db65649202d0
 	github.com/mitchellh/mapstructure v1.5.0
