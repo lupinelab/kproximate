@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kproximate.fullname" . }}
+  labels:
+    {{- include "kproximate.controllerLabels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "kproximate.controllerSelectorLabels" . | nindent 4 }}
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
