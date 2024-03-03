@@ -113,7 +113,8 @@ image:
 nameOverride: ""
 fullnameOverride: ""
 
-podAnnotations: {}
+controllerPodAnnotations: {}
+workerPodAnnotations: {}
 
 podSecurityContext: {}
   # fsGroup: 2000
