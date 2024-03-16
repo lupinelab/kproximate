@@ -9,6 +9,7 @@ data:
   kpNodeNamePrefix: {{ .Values.kproximate.config.kpNodeNamePrefix | quote }}
   kpNodeTemplateName: {{ .Values.kproximate.config.kpNodeTemplateName | quote | required ".Values.kproximate.config.kpNodeTemplateName is required" }}
   kpQemuExecJoin: {{ .Values.kproximate.config.kpQemuExecJoin | quote }}
+  kpLocalTemplateStorage: {{ .Values.kproximate.config.kpLocalTemplateStorage | quote }}
   loadHeadroom: {{ .Values.kproximate.config.loadHeadroom | quote }}
   maxKpNodes: {{ .Values.kproximate.config.maxKpNodes | quote }}
   pmAllowInsecure: {{ .Values.kproximate.config.pmAllowInsecure | quote }}

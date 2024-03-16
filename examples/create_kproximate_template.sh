@@ -2,7 +2,7 @@
 set -xe
 
 NAME= # The name of the resulting template
-STORAGE= # Add the name of the shared proxmox storage to store the template in
+STORAGE= # The name of the proxmox storage to store the template in
 VLAN= # The vlan tag for the template network interface, leave as empty string for no tag
 K3S_URL= # Add your k3s URL here ie. https://k3s-server:6443
 K3S_TOKEN= # Add your k3s token here, can be found at /var/lib/rancher/k3s/server/node-token on an existing k3s node

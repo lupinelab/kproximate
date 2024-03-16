@@ -34,6 +34,9 @@ kproximate:
 
     ## Set true to use Qemu-Exec to join nodes to the kubernetes cluster.
     kpQemuExecJoin: false
+
+    ## Set true if using local storage for templates.
+    kpLocalTemplateStorage: false
     
     ## The maximum number of kproximate nodes allowed.
     maxKpNodes: 3

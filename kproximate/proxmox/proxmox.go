@@ -57,8 +57,8 @@ type Proxmox interface {
 	GetRunningKpNodes(regexp.Regexp) ([]VmInformation, error)
 	GetAllKpNodes(regexp.Regexp) ([]VmInformation, error)
 	GetKpNode(name string, kpNodeNameRegex regexp.Regexp) (VmInformation, error)
-	GetKpNodeTemplateRef(kpNodeTemplateName string) (*proxmox.VmRef, error)
-	NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef, kpJoinCommand string)
+	GetKpNodeTemplateRef(kpNodeTemplateName string, localTemplateStorage bool, cloneTargetNode string) (*proxmox.VmRef, error)
+	NewKpNode(ctx context.Context, okchan chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, usingLocalStorage bool, kpNodeTemplateName string, kpJoinCommand string)
 	DeleteKpNode(name string, kpnodeName regexp.Regexp) error
 	QemuExecJoin(nodeName string, joinCommand string) (int, error)
 	GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error)
@@ -172,13 +172,23 @@ func (p *ProxmoxClient) GetKpNode(kpNodeName string, kpNodeNameRegex regexp.Rege
 	return VmInformation{}, err
 }
 
-func (p *ProxmoxClient) GetKpNodeTemplateRef(kpNodeTemplateName string) (*proxmox.VmRef, error) {
-	vmRef, err := p.client.GetVmRefByName(kpNodeTemplateName)
+func (p *ProxmoxClient) GetKpNodeTemplateRef(kpNodeTemplateName string, localTemplateStorage bool, cloneTargetNode string) (*proxmox.VmRef, error) {
+	vmRefs, err := p.client.GetVmRefsByName(kpNodeTemplateName)
 	if err != nil {
 		return nil, err
 	}
 
-	return vmRef, err
+	if localTemplateStorage {
+		for _, vmRef := range vmRefs {
+			if vmRef.Node() == cloneTargetNode {
+				return vmRef, nil
+			}
+		}
+	} else {
+		return vmRefs[0], nil
+	}
+
+	return nil, fmt.Errorf("could not find template on target node")
 }
 
 func (p *ProxmoxClient) NewKpNode(
@@ -188,9 +198,16 @@ func (p *ProxmoxClient) NewKpNode(
 	newKpNodeName string,
 	targetNode string,
 	kpNodeParams map[string]interface{},
-	kpNodeTemplate proxmox.VmRef,
+	localTemplateStorage bool,
+	kpNodeTemplateName string,
 	kpJoinCommand string,
 ) {
+	kpNodeTemplate, err := p.GetKpNodeTemplateRef(kpNodeTemplateName, localTemplateStorage, targetNode)
+	if err != nil {
+		errchan <- err
+		return
+	}
+
 	nextID, err := p.client.GetNextID(kpNodeTemplate.VmId())
 	if err != nil {
 		errchan <- err
@@ -204,7 +221,7 @@ func (p *ProxmoxClient) NewKpNode(
 		"vmid":   kpNodeTemplate.VmId(),
 	}
 
-	_, err = p.client.CloneQemuVm(&kpNodeTemplate, cloneParams)
+	_, err = p.client.CloneQemuVm(kpNodeTemplate, cloneParams)
 	if err != nil {
 		errchan <- err
 		return

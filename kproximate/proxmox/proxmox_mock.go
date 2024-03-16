@@ -71,12 +71,12 @@ func (p *ProxmoxMockClient) GetKpNode(name string, kpNodeName regexp.Regexp) (Vm
 	return VmInformation{}, err
 }
 
-func (p *ProxmoxMockClient) GetKpNodeTemplateRef(kpNodeTemplateName string) (*proxmox.VmRef, error) {
+func (p *ProxmoxMockClient) GetKpNodeTemplateRef(kpNodeTemplateName string, LocalTemplateStorage bool, cloneTargetNode string) (*proxmox.VmRef, error) {
 	err := errors.New("")
 	return &proxmox.VmRef{}, err
 }
 
-func (p *ProxmoxMockClient) NewKpNode(ctx context.Context, ok chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, kpNodeTemplate proxmox.VmRef, kpJoinCommand string) {
+func (p *ProxmoxMockClient) NewKpNode(ctx context.Context, okchan chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, usingLocalStorage bool, kpNodeTemplateName string, kpJoinCommand string) {
 
 }
 
