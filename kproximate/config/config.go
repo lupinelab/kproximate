@@ -4,7 +4,6 @@ import (
 	"context"
 	"regexp"
 
-	"github.com/Telmate/proxmox-api-go/proxmox"
 	"github.com/sethvargo/go-envconfig"
 )
 
@@ -16,9 +15,9 @@ type KproximateConfig struct {
 	KpNodeNamePrefix        string `env:"kpNodeNamePrefix"`
 	KpNodeNameRegex         regexp.Regexp
 	KpNodeParams            map[string]interface{}
-	KpNodeTemplateName      string `env:"kpNodeTemplateName"`
-	KpNodeTemplateRef       proxmox.VmRef
+	KpNodeTemplateName      string  `env:"kpNodeTemplateName"`
 	KpQemuExecJoin          bool    `env:"kpQemuExecJoin"`
+	KpLocalTemplateStorage  bool    `env:"kpLocalTemplateStorage"`
 	LoadHeadroom            float64 `env:"loadHeadroom"`
 	MaxKpNodes              int     `env:"maxKpNodes"`
 	PmAllowInsecure         bool    `env:"pmAllowInsecure"`
@@ -76,7 +75,7 @@ func validateConfig(config *KproximateConfig) KproximateConfig {
 	if config.WaitSecondsForJoin < 60 {
 		config.WaitSecondsForJoin = 60
 	}
-	
+
 	if config.WaitSecondsForProvision < 60 {
 		config.WaitSecondsForProvision = 60
 	}

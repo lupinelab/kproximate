@@ -2,7 +2,7 @@
 set -xe
 
 NAME= # The name of the resulting template
-STORAGE= # Add the name of the shared proxmox storage to store the template in
+STORAGE= # The name of the proxmox storage to store the template in
 VLAN= # The vlan tag for the template network interface, leave as empty string for no tag
 
 # Check the required variables have been set

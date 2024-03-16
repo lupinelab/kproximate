@@ -41,13 +41,6 @@ func NewScaler(config config.KproximateConfig) (*Scaler, error) {
 
 	config.KpNodeNameRegex = *regexp.MustCompile(fmt.Sprintf(`^%s-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$`, config.KpNodeNamePrefix))
 
-	kpNodeTemplateRef, err := proxmox.GetKpNodeTemplateRef(config.KpNodeTemplateName)
-	if err != nil {
-		return nil, err
-	}
-
-	config.KpNodeTemplateRef = *kpNodeTemplateRef
-
 	config.KpNodeParams = map[string]interface{}{
 		"agent":     "enabled=1",
 		"balloon":   0,
@@ -256,7 +249,8 @@ func (scaler *Scaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error
 		scaleEvent.NodeName,
 		scaleEvent.TargetHost.Node,
 		scaler.Config.KpNodeParams,
-		scaler.Config.KpNodeTemplateRef,
+		scaler.Config.KpLocalTemplateStorage,
+		scaler.Config.KpNodeTemplateName,
 		scaler.Config.KpJoinCommand,
 	)
 

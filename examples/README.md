@@ -34,9 +34,9 @@ Alternatively you may use password authentication with a user that has the above
 
 The [create_kproximate_template.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template.sh) script shows a working example of how to create a K3S template node that will automatically join the Kubernetes cluster when booted.
 
-This script should be run on a host in the Proxmox cluster after configuring the the variables at the top with values appropiate to your cluster.
+This script should be run on a host in the Proxmox cluster after configuring the the variables at the top with values appropriate for your cluster.
 
-Special consideration should be given to the STORAGE variable whose value should be the name of ***shared storage*** that is available to all of your proxmox hosts.
+Special consideration should be given to the STORAGE variable whose value should be the name of the storage on which you wish to store the template.
 
 When running the script it requires two args. First the codename of an ubuntu release (e.g. "jammy") and then the VMID to assign to the template. 
 
@@ -45,6 +45,10 @@ The VMID should also be chosen carefully since all kproximate nodes created will
 Example:
 
 ```./create_kproximate_template.sh jammy 600```
+
+### Using local storage
+
+Those wishing to use local storage can set `kpLocalTemplateStorage: true` in their configuration and create a template on each Proxmox node with an identical name but a different VMID.
 
 ### Join via qemu-exec (***experimental***)
 
