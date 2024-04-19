@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/lupinelab/kproximate/logger"
 	apiv1 "k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +22,7 @@ import (
 )
 
 type Kubernetes interface {
-	GetUnschedulableResources() (*UnschedulableResources, error)
+	GetUnschedulableResources(kpNodeCores, kpNodeMemory int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error)
 	IsFailedSchedulingDueToControlPlaneTaint() (bool, error)
 	GetWorkerNodes() (*apiv1.NodeList, error)
 	GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error)
@@ -84,7 +85,7 @@ func NewKubernetesClient() (KubernetesClient, error) {
 	return kubernetes, nil
 }
 
-func (k *KubernetesClient) GetUnschedulableResources() (*UnschedulableResources, error) {
+func (k *KubernetesClient) GetUnschedulableResources(kpNodeMemory, kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error) {
 	var rCpu float64
 	var rMemory float64
 
@@ -93,19 +94,36 @@ func (k *KubernetesClient) GetUnschedulableResources() (*UnschedulableResources,
 		metav1.ListOptions{},
 	)
 	if err != nil {
-		return nil, err
+		return UnschedulableResources{}, err
 	}
 
+	maxAllocatableMemoryForSinglePod, err := k.getMaxAllocatableMemoryForSinglePod(kpNodeNameRegex)
+	if err != nil {
+		return UnschedulableResources{}, err
+	}
+
+PODLOOP:
 	for _, pod := range pods.Items {
 		for _, condition := range pod.Status.Conditions {
 			if condition.Type == apiv1.PodScheduled && condition.Status == apiv1.ConditionFalse && condition.Reason == "Unschedulable" {
 				if strings.Contains(condition.Message, "Insufficient cpu") {
 					for _, container := range pod.Spec.Containers {
+						if container.Resources.Requests.Cpu().CmpInt64(kpNodeCores) >= 0 {
+							logger.WarningLog.Printf("Ignoring pod (%s) with unsatisfiable Cpu request: %f", pod.Name, container.Resources.Requests.Cpu().AsApproximateFloat64())
+							continue PODLOOP
+						}
+
 						rCpu += container.Resources.Requests.Cpu().AsApproximateFloat64()
 					}
 				}
+
 				if strings.Contains(condition.Message, "Insufficient memory") {
 					for _, container := range pod.Spec.Containers {
+						if container.Resources.Requests.Memory().AsApproximateFloat64() >= maxAllocatableMemoryForSinglePod {
+							logger.WarningLog.Printf("Ignoring pod (%s) with unsatisfiable Memory request: %f", pod.Name, container.Resources.Requests.Memory().AsApproximateFloat64())
+							continue PODLOOP
+						}
+
 						rMemory += container.Resources.Requests.Memory().AsApproximateFloat64()
 					}
 				}
@@ -113,7 +131,7 @@ func (k *KubernetesClient) GetUnschedulableResources() (*UnschedulableResources,
 		}
 	}
 
-	unschedulableResources := &UnschedulableResources{
+	unschedulableResources := UnschedulableResources{
 		Cpu:    rCpu,
 		Memory: int64(rMemory),
 	}
@@ -325,4 +343,20 @@ func (k *KubernetesClient) CordonKpNode(kpNodeName string) error {
 	)
 
 	return err
+}
+
+func (k *KubernetesClient) getMaxAllocatableMemoryForSinglePod(kpNodeNameRegex regexp.Regexp) (float64, error) {
+	var maxAllocatable float64
+	kpNodes, err := k.GetKpNodes(kpNodeNameRegex)
+	if err != nil {
+		return 0.0, err
+	}
+
+	for _, node := range kpNodes {
+		if node.Status.Allocatable.Cpu().AsApproximateFloat64() > maxAllocatable {
+			maxAllocatable = node.Status.Allocatable.Cpu().AsApproximateFloat64()
+		}
+	}
+
+	return maxAllocatable, nil
 }

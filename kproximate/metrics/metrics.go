@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lupinelab/kproximate/config"
+	"github.com/lupinelab/kproximate/logger"
 	"github.com/lupinelab/kproximate/scaler"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -52,54 +54,43 @@ var (
 		Name: "memory_allocated_total",
 		Help: "The total memory allocated",
 	})
-
-
 )
 
 func recordMetrics(
-	scaler *scaler.Scaler,
+	scaler scaler.Scaler,
+	config config.KproximateConfig,
 ) {
-	go func() {
-		for {
-			numKpNodes, _ := scaler.Proxmox.GetAllKpNodes(scaler.Config.KpNodeNameRegex)
-			totalKpNodes.Set(float64(len(numKpNodes)))
+	for {
+		time.Sleep(5 * time.Second)
 
-			runningNodes, _ := scaler.Kubernetes.GetKpNodes(scaler.Config.KpNodeNameRegex)
-			runningKpNodes.Set(float64(len(runningNodes)))
+		numKpNodes, _ := scaler.NumNodes()
+		totalKpNodes.Set(float64(numKpNodes))
 
-			totalProvisionedCpu.Set(float64(len(runningNodes) * scaler.Config.KpNodeCores))
-			totalProvisionedMemory.Set(float64(len(runningNodes) * (scaler.Config.KpNodeMemory << 20)))
+		runningNodes, _ := scaler.NumReadyNodes()
+		runningKpNodes.Set(float64(runningNodes))
 
-			var allocatableCpu float64
-			var allocatableMemory float64
-			kpNodes, _ := scaler.Kubernetes.GetKpNodes(scaler.Config.KpNodeNameRegex)
-			for _, kpNode := range kpNodes {
-				allocatableCpu += kpNode.Status.Allocatable.Cpu().AsApproximateFloat64()
-				allocatableMemory += kpNode.Status.Allocatable.Memory().AsApproximateFloat64()
-			}
+		totalProvisionedCpu.Set(float64(runningNodes * config.KpNodeCores))
+		totalProvisionedMemory.Set(float64(runningNodes * (config.KpNodeMemory << 20)))
 
-			totalAllocatableCpu.Set(allocatableCpu)
-			totalAllocatableMemory.Set(allocatableMemory)
-
-			allocatedResources, _ := scaler.Kubernetes.GetAllocatedResources(scaler.Config.KpNodeNameRegex)
-			var allocatedCpu float64
-			var allocatedMemory float64
-			for _, kpNode := range allocatedResources {
-				allocatedCpu += kpNode.Cpu
-				allocatedMemory += kpNode.Memory
-			}
-
-			totalAllocatedCpu.Set(allocatedCpu)
-			totalAllocatedMemory.Set(allocatedMemory)
-			
-			time.Sleep(5 * time.Second)
+		resourceStats, err := scaler.GetResourceStatistics()
+		if err != nil {
+			logger.ErrorLog.Printf("Failed to get resource stats: %s\n", err)
+			continue
 		}
-	}()
+
+		totalAllocatableCpu.Set(resourceStats.Allocatable.Cpu)
+		totalAllocatableMemory.Set(resourceStats.Allocatable.Memory)
+
+		totalAllocatedCpu.Set(resourceStats.Allocated.Cpu)
+		totalAllocatedMemory.Set(resourceStats.Allocated.Memory)
+	}
+
 }
 
 func Serve(
 	ctx context.Context,
-	scaler *scaler.Scaler,
+	scaler scaler.Scaler,
+	config config.KproximateConfig,
 ) {
 	registry := prometheus.NewRegistry()
 
@@ -114,7 +105,7 @@ func Serve(
 		totalAllocatedMemory,
 	)
 
-	recordMetrics(scaler)
+	go recordMetrics(scaler, config)
 
 	http.Handle(
 		"/metrics",
