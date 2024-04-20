@@ -297,6 +297,7 @@ func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent
 		scaleEvent.NodeName,
 	)
 
+	// TODO could this call CheckForNodeJoin itself?
 	err = waitForNodeJoin(kctx, cancelKCtx, scaleEvent, okChan)
 	if err != nil {
 		return err
@@ -316,10 +317,14 @@ func (scaler *ProxmoxScaler) joinByQemuExec(nodeName string) error {
 
 	var status proxmox.QemuExecStatus
 
-	for status.Exited != 1 {
+	for {
 		status, err = scaler.Proxmox.GetQemuExecJoinStatus(nodeName, joinExecPid)
 		if err != nil {
 			return err
+		}
+
+		if status.Exited == 1 {
+			break
 		}
 
 		time.Sleep(time.Second * 1)
@@ -367,7 +372,7 @@ func (scaler *ProxmoxScaler) AssessScaleDown() (*ScaleEvent, error) {
 		ScaleType: -1,
 	}
 
-	err = scaler.SelectScaleDownTarget(&scaleEvent)
+	err = scaler.selectScaleDownTarget(&scaleEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -397,16 +402,13 @@ func (scaler *ProxmoxScaler) assessScaleDownForResourceType(currentResourceAlloc
 	}
 
 	postScaledownCapacity := totalResourceAllocatable - kpNodeResourceCapacity
-	fmt.Println(postScaledownCapacity)
 	postScaleDownLoad := int64(math.Ceil(currentResourceAllocated) / float64(postScaledownCapacity) * 100)
-	fmt.Println(postScaleDownLoad)
 	postScaleDownHeadroom := 100 - postScaleDownLoad
-	fmt.Println(postScaleDownHeadroom)
 
 	return postScaleDownHeadroom > int64(scaler.config.LoadHeadroom*100)
 }
 
-func (scaler *ProxmoxScaler) SelectScaleDownTarget(scaleEvent *ScaleEvent) error {
+func (scaler *ProxmoxScaler) selectScaleDownTarget(scaleEvent *ScaleEvent) error {
 	if scaleEvent.ScaleType != -1 {
 		return fmt.Errorf("expected ScaleEvent ScaleType to be '-1' but got: %d", scaleEvent.ScaleType)
 	}

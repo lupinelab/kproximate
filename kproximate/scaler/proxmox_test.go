@@ -1,6 +1,7 @@
 package scaler
 
 import (
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -8,15 +9,17 @@ import (
 	"github.com/lupinelab/kproximate/kubernetes"
 	"github.com/lupinelab/kproximate/proxmox"
 	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 func TestRequiredScaleEventsFor1CPU(t *testing.T) {
-	unschedulableResources := kubernetes.UnschedulableResources{
-		Cpu:    1.0,
-		Memory: 0,
-	}
-
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
+		Kubernetes: &kubernetes.Mock{
+			UnschedulableResources: kubernetes.UnschedulableResources{
+				Cpu:    1.0,
+				Memory: 0,
+			},
+		},
 		config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
@@ -26,7 +29,7 @@ func TestRequiredScaleEventsFor1CPU(t *testing.T) {
 
 	currentEvents := 0
 
-	requiredScaleEvents, err := scaler.requiredScaleEvents(unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(currentEvents)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -37,12 +40,13 @@ func TestRequiredScaleEventsFor1CPU(t *testing.T) {
 }
 
 func TestRequiredScaleEventsFor3CPU(t *testing.T) {
-	unschedulableResources := kubernetes.UnschedulableResources{
-		Cpu:    3.0,
-		Memory: 0,
-	}
-
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
+		Kubernetes: &kubernetes.Mock{
+			UnschedulableResources: kubernetes.UnschedulableResources{
+				Cpu:    3.0,
+				Memory: 0,
+			},
+		},
 		config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
@@ -52,7 +56,7 @@ func TestRequiredScaleEventsFor3CPU(t *testing.T) {
 
 	currentEvents := 0
 
-	requiredScaleEvents, err := scaler.requiredScaleEvents(unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(currentEvents)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -63,12 +67,13 @@ func TestRequiredScaleEventsFor3CPU(t *testing.T) {
 }
 
 func TestRequiredScaleEventsFor1024MBMemory(t *testing.T) {
-	unschedulableResources := kubernetes.UnschedulableResources{
-		Cpu:    0,
-		Memory: 1073741824,
-	}
-
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
+		Kubernetes: &kubernetes.Mock{
+			UnschedulableResources: kubernetes.UnschedulableResources{
+				Cpu:    0,
+				Memory: 1073741824,
+			},
+		},
 		config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
@@ -78,7 +83,7 @@ func TestRequiredScaleEventsFor1024MBMemory(t *testing.T) {
 
 	currentEvents := 0
 
-	requiredScaleEvents, err := scaler.requiredScaleEvents(unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(currentEvents)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -89,12 +94,13 @@ func TestRequiredScaleEventsFor1024MBMemory(t *testing.T) {
 }
 
 func TestRequiredScaleEventsFor3072MBMemory(t *testing.T) {
-	unschedulableResources := kubernetes.UnschedulableResources{
-		Cpu:    0,
-		Memory: 3221225472,
-	}
-
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
+		Kubernetes: &kubernetes.Mock{
+			UnschedulableResources: kubernetes.UnschedulableResources{
+				Cpu:    0,
+				Memory: 3221225472,
+			},
+		},
 		config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
@@ -104,7 +110,7 @@ func TestRequiredScaleEventsFor3072MBMemory(t *testing.T) {
 
 	currentEvents := 0
 
-	requiredScaleEvents, err := scaler.requiredScaleEvents(unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(currentEvents)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -115,12 +121,13 @@ func TestRequiredScaleEventsFor3072MBMemory(t *testing.T) {
 }
 
 func TestRequiredScaleEventsFor1CPU3072MBMemory(t *testing.T) {
-	unschedulableResources := kubernetes.UnschedulableResources{
-		Cpu:    1,
-		Memory: 3221225472,
-	}
-
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
+		Kubernetes: &kubernetes.Mock{
+			UnschedulableResources: kubernetes.UnschedulableResources{
+				Cpu:    1,
+				Memory: 3221225472,
+			},
+		},
 		config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
@@ -130,7 +137,7 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory(t *testing.T) {
 
 	currentEvents := 0
 
-	requiredScaleEvents, err := scaler.requiredScaleEvents(unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(currentEvents)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -141,12 +148,13 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory(t *testing.T) {
 }
 
 func TestRequiredScaleEventsFor1CPU3072MBMemory1QueuedEvent(t *testing.T) {
-	unschedulableResources := kubernetes.UnschedulableResources{
-		Cpu:    1,
-		Memory: 3221225472,
-	}
-
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
+		Kubernetes: &kubernetes.Mock{
+			UnschedulableResources: kubernetes.UnschedulableResources{
+				Cpu:    1,
+				Memory: 3221225472,
+			},
+		},
 		config: config.KproximateConfig{
 			KpNodeCores:  2,
 			KpNodeMemory: 2048,
@@ -156,7 +164,7 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory1QueuedEvent(t *testing.T) {
 
 	currentEvents := 1
 
-	requiredScaleEvents, err := scaler.requiredScaleEvents(unschedulableResources, currentEvents)
+	requiredScaleEvents, err := s.RequiredScaleEvents(currentEvents)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -167,7 +175,7 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory1QueuedEvent(t *testing.T) {
 }
 
 func TestSelectTargetHosts(t *testing.T) {
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
 		Proxmox: &proxmox.Mock{
 			ClusterStats: []proxmox.HostInformation{
 				{
@@ -220,19 +228,22 @@ func TestSelectTargetHosts(t *testing.T) {
 	scaleEvents := []*ScaleEvent{
 		{
 			ScaleType: 1,
-			NodeName:  scaler.newKpNodeName(),
+			NodeName:  fmt.Sprintf("%s-%s", s.config.KpNodeNamePrefix, uuid.NewUUID()),
 		},
 		{
 			ScaleType: 1,
-			NodeName:  scaler.newKpNodeName(),
+			NodeName:  fmt.Sprintf("%s-%s", s.config.KpNodeNamePrefix, uuid.NewUUID()),
 		},
 		{
 			ScaleType: 1,
-			NodeName:  scaler.newKpNodeName(),
+			NodeName:  fmt.Sprintf("%s-%s", s.config.KpNodeNamePrefix, uuid.NewUUID()),
 		},
 	}
 
-	scaler.SelectTargetHosts(scaleEvents)
+	err := s.SelectTargetHosts(scaleEvents)
+	if err != nil {
+		t.Error(err)
+	}
 
 	if scaleEvents[0].TargetHost.Node != "host-01" {
 		t.Errorf("Expected host-01 to be selected as target host got %s", scaleEvents[0].TargetHost.Node)
@@ -255,7 +266,7 @@ func TestAssessScaleDownForResourceTypeZeroLoad(t *testing.T) {
 	}
 
 	scaleDownZeroLoad := scaler.assessScaleDownForResourceType(0, 5, 5)
-	if scaleDownZeroLoad == true {
+	if scaleDownZeroLoad {
 		t.Errorf("Expected false but got %t", scaleDownZeroLoad)
 	}
 }
@@ -268,7 +279,7 @@ func TestAssessScaleDownForResourceTypeAcceptable(t *testing.T) {
 	}
 
 	scaleDownAcceptable := scaler.assessScaleDownForResourceType(6, 10, 2)
-	if scaleDownAcceptable != true {
+	if !scaleDownAcceptable {
 		t.Errorf("Expected true but got %t", scaleDownAcceptable)
 	}
 }
@@ -281,7 +292,7 @@ func TestAssessScaleDownForResourceTypeUnAcceptable(t *testing.T) {
 	}
 
 	scaleDownUnAcceptable := scaler.assessScaleDownForResourceType(7, 10, 2)
-	if scaleDownUnAcceptable == true {
+	if scaleDownUnAcceptable {
 		t.Errorf("Expected false but got %t", scaleDownUnAcceptable)
 	}
 }
@@ -293,15 +304,14 @@ func TestSelectScaleDownTarget(t *testing.T) {
 	node2.Name = "kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a"
 	node3 := apiv1.Node{}
 	node3.Name = "kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38"
-	kpNodes := []apiv1.Node{
-		node1,
-		node2,
-		node3,
-	}
 
 	scaler := ProxmoxScaler{
 		Kubernetes: &kubernetes.Mock{
-			KpNodes: kpNodes,
+			KpNodes: []apiv1.Node{
+				node1,
+				node2,
+				node3,
+			},
 			AllocatedResources: map[string]*kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
 					Cpu:    1.0,
@@ -327,7 +337,7 @@ func TestSelectScaleDownTarget(t *testing.T) {
 		ScaleType: -1,
 	}
 
-	scaler.SelectScaleDownTarget(&scaleEvent)
+	scaler.selectScaleDownTarget(&scaleEvent)
 
 	if scaleEvent.NodeName != "kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38" {
 		t.Errorf("Expected kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38 but got %s", scaleEvent.NodeName)
@@ -335,7 +345,7 @@ func TestSelectScaleDownTarget(t *testing.T) {
 }
 
 func TestAssessScaleDownIsAcceptable(t *testing.T) {
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
 		Kubernetes: &kubernetes.Mock{
 			AllocatedResources: map[string]*kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
@@ -363,20 +373,20 @@ func TestAssessScaleDownIsAcceptable(t *testing.T) {
 		},
 	}
 
-	scaleEvent, _ := scaler.AssessScaleDown()
+	scaleEvent, _ := s.AssessScaleDown()
 
 	if scaleEvent.NodeName == "" {
-		t.Errorf("scaleEvent had no NodeName")
+		t.Error("scaleEvent had no NodeName")
 	}
 
 	if scaleEvent == nil {
-		t.Errorf("AssessScaleDown returned nil")
+		t.Error("AssessScaleDown returned nil")
 	}
 
 }
 
 func TestAssessScaleDownIsUnacceptable(t *testing.T) {
-	scaler := ProxmoxScaler{
+	s := ProxmoxScaler{
 		Kubernetes: &kubernetes.Mock{
 			AllocatedResources: map[string]*kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
@@ -416,9 +426,57 @@ func TestAssessScaleDownIsUnacceptable(t *testing.T) {
 		},
 	}
 
-	scaleEvent, _ := scaler.AssessScaleDown()
+	scaleEvent, _ := s.AssessScaleDown()
 
 	if scaleEvent != nil {
-		t.Errorf("AssessScaleDown did not return nil")
+		t.Error("AssessScaleDown did not return nil")
+	}
+}
+
+func TestJoinByQemuExecSuccess(t *testing.T) {
+	s := ProxmoxScaler{
+		Proxmox: &proxmox.Mock{
+			JoinExecPid: 1,
+			QemuExecJoinStatus: proxmox.QemuExecStatus{
+				Exited:   1,
+				ExitCode: 0,
+				OutData:  "We shouldnt see this!",
+			},
+		},
+		config: config.KproximateConfig{
+			KpJoinCommand: "echo test",
+		},
+	}
+
+	kpNodeName := "kp-node-96f665dd-21c3-4ce1-a1e4-c7717c5338a3"
+
+	err := s.joinByQemuExec(kpNodeName)
+
+	if err != nil {
+		t.Errorf("Expected nil, Got %s", err)
+	}
+}
+
+func TestJoinByQemuExecFail(t *testing.T) {
+	s := ProxmoxScaler{
+		Proxmox: &proxmox.Mock{
+			JoinExecPid: 1,
+			QemuExecJoinStatus: proxmox.QemuExecStatus{
+				Exited:   1,
+				ExitCode: 1,
+				OutData:  "The join command failed!",
+			},
+		},
+		config: config.KproximateConfig{
+			KpJoinCommand: "echo test",
+		},
+	}
+
+	kpNodeName := "kp-node-96f665dd-21c3-4ce1-a1e4-c7717c5338a3"
+
+	err := s.joinByQemuExec(kpNodeName)
+
+	if err == nil {
+		t.Error("Expected the join command to fail")
 	}
 }
