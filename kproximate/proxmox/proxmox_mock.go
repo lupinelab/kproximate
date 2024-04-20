@@ -13,6 +13,7 @@ type Mock struct {
 	KpNodes            []VmInformation
 	KpNode             VmInformation
 	KpNodeTemplateRef  proxmox.VmRef
+	JoinExecPid        int
 	QemuExecJoinStatus QemuExecStatus
 }
 
@@ -44,7 +45,7 @@ func (p *Mock) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {
 }
 
 func (p *Mock) QemuExecJoin(nodeName string, joinCommand string) (int, error) {
-	return 0, nil
+	return p.JoinExecPid, nil
 }
 
 func (p *Mock) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error) {
