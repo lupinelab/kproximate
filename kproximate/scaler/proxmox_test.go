@@ -312,7 +312,7 @@ func TestSelectScaleDownTarget(t *testing.T) {
 				node2,
 				node3,
 			},
-			AllocatedResources: map[string]*kubernetes.AllocatedResources{
+			AllocatedResources: map[string]kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
 					Cpu:    1.0,
 					Memory: 2048.0,
@@ -347,7 +347,7 @@ func TestSelectScaleDownTarget(t *testing.T) {
 func TestAssessScaleDownIsAcceptable(t *testing.T) {
 	s := ProxmoxScaler{
 		Kubernetes: &kubernetes.Mock{
-			AllocatedResources: map[string]*kubernetes.AllocatedResources{
+			AllocatedResources: map[string]kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
 					Cpu:    1.0,
 					Memory: 1073741824.0,
@@ -388,7 +388,7 @@ func TestAssessScaleDownIsAcceptable(t *testing.T) {
 func TestAssessScaleDownIsUnacceptable(t *testing.T) {
 	s := ProxmoxScaler{
 		Kubernetes: &kubernetes.Mock{
-			AllocatedResources: map[string]*kubernetes.AllocatedResources{
+			AllocatedResources: map[string]kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
 					Cpu:    2.0,
 					Memory: 2147483648.0,

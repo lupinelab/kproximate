@@ -11,7 +11,7 @@ import (
 
 	"github.com/lupinelab/kproximate/logger"
 	apiv1 "k8s.io/api/core/v1"
-	policy "k8s.io/api/policy/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
@@ -22,19 +22,19 @@ import (
 )
 
 type Kubernetes interface {
-	GetUnschedulableResources(kpNodeCores, kpNodeMemory int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error)
-	IsFailedSchedulingDueToControlPlaneTaint() (bool, error)
-	GetWorkerNodes() (*apiv1.NodeList, error)
+	GetUnschedulableResources(kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error)
+	IsUnschedulableDueToControlPlaneTaint() (bool, error)
+	GetWorkerNodes() ([]apiv1.Node, error)
 	GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error)
-	GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, error)
-	GetAllocatedResources(kpNodeName regexp.Regexp) (map[string]*AllocatedResources, error)
+	GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node, error)
+	GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error)
 	CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
 	DeleteKpNode(kpNodeName string) error
 	CordonKpNode(KpNodeName string) error
 }
 
 type KubernetesClient struct {
-	client *kubernetes.Clientset
+	client kubernetes.Interface
 }
 
 type UnschedulableResources struct {
@@ -85,7 +85,11 @@ func NewKubernetesClient() (KubernetesClient, error) {
 	return kubernetes, nil
 }
 
-func (k *KubernetesClient) GetUnschedulableResources(kpNodeMemory, kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error) {
+func isUnschedulable(condition apiv1.PodCondition) bool {
+	return condition.Type == apiv1.PodScheduled && condition.Status == apiv1.ConditionFalse && condition.Reason == apiv1.PodReasonUnschedulable
+}
+
+func (k *KubernetesClient) GetUnschedulableResources(kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error) {
 	var rCpu float64
 	var rMemory float64
 
@@ -105,7 +109,7 @@ func (k *KubernetesClient) GetUnschedulableResources(kpNodeMemory, kpNodeCores i
 PODLOOP:
 	for _, pod := range pods.Items {
 		for _, condition := range pod.Status.Conditions {
-			if condition.Type == apiv1.PodScheduled && condition.Status == apiv1.ConditionFalse && condition.Reason == "Unschedulable" {
+			if isUnschedulable(condition) {
 				if strings.Contains(condition.Message, "Insufficient cpu") {
 					for _, container := range pod.Spec.Containers {
 						if container.Resources.Requests.Cpu().CmpInt64(kpNodeCores) >= 0 {
@@ -139,7 +143,7 @@ PODLOOP:
 	return unschedulableResources, err
 }
 
-func (k *KubernetesClient) IsFailedSchedulingDueToControlPlaneTaint() (bool, error) {
+func (k *KubernetesClient) IsUnschedulableDueToControlPlaneTaint() (bool, error) {
 	pods, err := k.client.CoreV1().Pods("").List(
 		context.TODO(),
 		metav1.ListOptions{},
@@ -150,19 +154,20 @@ func (k *KubernetesClient) IsFailedSchedulingDueToControlPlaneTaint() (bool, err
 
 	for _, pod := range pods.Items {
 		for _, condition := range pod.Status.Conditions {
-			if condition.Type == apiv1.PodScheduled && condition.Status == apiv1.ConditionFalse && condition.Reason == "Unschedulable" {
+			if isUnschedulable(condition) {
 				if strings.Contains(condition.Message, "untolerated taint {node-role.kubernetes.io/control-plane:") {
 					return true, nil
 				}
 			}
 		}
 	}
+
 	return false, nil
 }
 
 // Worker nodes should comprise of all kpNodes and any additional worker nodes
 // in the cluster that are not managed by kproximate
-func (k *KubernetesClient) GetWorkerNodes() (*apiv1.NodeList, error) {
+func (k *KubernetesClient) GetWorkerNodes() ([]apiv1.Node, error) {
 
 	noControlPlaneLabel, err := labels.NewRequirement(
 		"node-role.kubernetes.io/control-plane",
@@ -198,7 +203,7 @@ func (k *KubernetesClient) GetWorkerNodes() (*apiv1.NodeList, error) {
 		return nil, err
 	}
 
-	return nodes, err
+	return nodes.Items, err
 }
 
 func (k *KubernetesClient) GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error) {
@@ -208,7 +213,7 @@ func (k *KubernetesClient) GetWorkerNodesAllocatableResources() (WorkerNodesAllo
 		return workerNodesAllocatableResources, err
 	}
 
-	for _, workerNode := range workerNodes.Items {
+	for _, workerNode := range workerNodes {
 		workerNodesAllocatableResources.Cpu += int64(workerNode.Status.Allocatable.Cpu().AsApproximateFloat64())
 		workerNodesAllocatableResources.Memory += int64(workerNode.Status.Allocatable.Memory().AsApproximateFloat64())
 	}
@@ -216,16 +221,16 @@ func (k *KubernetesClient) GetWorkerNodesAllocatableResources() (WorkerNodesAllo
 	return workerNodesAllocatableResources, err
 }
 
-func (k *KubernetesClient) GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, error) {
-	nodes, err := k.GetWorkerNodes()
+func (k *KubernetesClient) GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node, error) {
+	workerNodes, err := k.GetWorkerNodes()
 	if err != nil {
 		return nil, err
 	}
 
 	var kpNodes []apiv1.Node
 
-	for _, kpNode := range nodes.Items {
-		if kpNodeName.MatchString(kpNode.Name) {
+	for _, kpNode := range workerNodes {
+		if kpNodeNameRegex.MatchString(kpNode.Name) {
 			kpNodes = append(kpNodes, kpNode)
 		}
 	}
@@ -233,19 +238,16 @@ func (k *KubernetesClient) GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, e
 	return kpNodes, err
 }
 
-func (k *KubernetesClient) GetAllocatedResources(kpNodeName regexp.Regexp) (map[string]*AllocatedResources, error) {
-	kpNodes, err := k.GetKpNodes(kpNodeName)
+func (k *KubernetesClient) GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
+	kpNodes, err := k.GetKpNodes(kpNodeNameRegex)
 	if err != nil {
 		return nil, err
 	}
 
-	allocatedResources := map[string]*AllocatedResources{}
+	allocatedResources := map[string]AllocatedResources{}
 
 	for _, kpNode := range kpNodes {
-		allocatedResources[kpNode.Name] = &AllocatedResources{
-			Cpu:    0,
-			Memory: 0,
-		}
+		nodeResources := AllocatedResources{}
 
 		pods, err := k.client.CoreV1().Pods("").List(
 			context.TODO(),
@@ -259,10 +261,12 @@ func (k *KubernetesClient) GetAllocatedResources(kpNodeName regexp.Regexp) (map[
 
 		for _, pod := range pods.Items {
 			for _, container := range pod.Spec.Containers {
-				allocatedResources[kpNode.Name].Cpu += container.Resources.Requests.Cpu().AsApproximateFloat64()
-				allocatedResources[kpNode.Name].Memory += container.Resources.Requests.Memory().AsApproximateFloat64()
+				nodeResources.Cpu += container.Resources.Requests.Cpu().AsApproximateFloat64()
+				nodeResources.Memory += container.Resources.Requests.Memory().AsApproximateFloat64()
 			}
 		}
+
+		allocatedResources[kpNode.Name] = nodeResources
 	}
 
 	return allocatedResources, err
@@ -304,7 +308,7 @@ func (k *KubernetesClient) DeleteKpNode(kpNodeName string) error {
 	for _, pod := range pods.Items {
 		k.client.PolicyV1().Evictions(pod.Namespace).Evict(
 			context.TODO(),
-			&policy.Eviction{
+			&policyv1.Eviction{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      pod.Name,
 					Namespace: pod.Namespace,
@@ -353,8 +357,8 @@ func (k *KubernetesClient) getMaxAllocatableMemoryForSinglePod(kpNodeNameRegex r
 	}
 
 	for _, node := range kpNodes {
-		if node.Status.Allocatable.Cpu().AsApproximateFloat64() > maxAllocatable {
-			maxAllocatable = node.Status.Allocatable.Cpu().AsApproximateFloat64()
+		if node.Status.Allocatable.Memory().AsApproximateFloat64() > maxAllocatable {
+			maxAllocatable = node.Status.Allocatable.Memory().AsApproximateFloat64()
 		}
 	}
 

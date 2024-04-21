@@ -11,22 +11,22 @@ import (
 type Mock struct {
 	CordonedNodes                          []string
 	DeletedNodes                           []string
-	AllocatedResources                     map[string]*AllocatedResources
+	AllocatedResources                     map[string]AllocatedResources
 	UnschedulableResources                 UnschedulableResources
 	WorkerNodesAllocatableResources        WorkerNodesAllocatableResources
 	FailedSchedulingDueToControlPlaneTaint bool
 	KpNodes                                []apiv1.Node
 }
 
-func (m *Mock) GetUnschedulableResources(kpNodeMemory, kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error) {
+func (m *Mock) GetUnschedulableResources(kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error) {
 	return m.UnschedulableResources, nil
 }
 
-func (m *Mock) IsFailedSchedulingDueToControlPlaneTaint() (bool, error) {
+func (m *Mock) IsUnschedulableDueToControlPlaneTaint() (bool, error) {
 	return m.FailedSchedulingDueToControlPlaneTaint, nil
 }
 
-func (m *Mock) GetWorkerNodes() (*apiv1.NodeList, error) {
+func (m *Mock) GetWorkerNodes() ([]apiv1.Node, error) {
 	return nil, nil
 }
 
@@ -34,7 +34,7 @@ func (m *Mock) GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResou
 	return m.WorkerNodesAllocatableResources, nil
 }
 
-func (m *Mock) GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, error) {
+func (m *Mock) GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node, error) {
 	if m.KpNodes != nil {
 		return m.KpNodes, nil
 	}
@@ -55,7 +55,7 @@ func (m *Mock) GetKpNodes(kpNodeName regexp.Regexp) ([]apiv1.Node, error) {
 	return nodes, nil
 }
 
-func (m *Mock) GetAllocatedResources(kpNodeName regexp.Regexp) (map[string]*AllocatedResources, error) {
+func (m *Mock) GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
 	return m.AllocatedResources, nil
 }
 

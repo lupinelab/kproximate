@@ -102,7 +102,7 @@ func (scaler *ProxmoxScaler) requiredScaleEvents(requiredResources kubernetes.Un
 
 	// If there are no worker nodes then pods can fail to schedule due to a control-plane taint, trigger a scaling event
 	if len(requiredScaleEvents) == 0 && numCurrentEvents == 0 {
-		schedulingFailed, err := scaler.Kubernetes.IsFailedSchedulingDueToControlPlaneTaint()
+		schedulingFailed, err := scaler.Kubernetes.IsUnschedulableDueToControlPlaneTaint()
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +122,7 @@ func (scaler *ProxmoxScaler) requiredScaleEvents(requiredResources kubernetes.Un
 }
 
 func (scaler *ProxmoxScaler) RequiredScaleEvents(allScaleEvents int) ([]*ScaleEvent, error) {
-	unschedulableResources, err := scaler.Kubernetes.GetUnschedulableResources(int64(scaler.config.KpNodeCores), int64(scaler.config.KpNodeMemory), scaler.config.KpNodeNameRegex)
+	unschedulableResources, err := scaler.Kubernetes.GetUnschedulableResources(int64(scaler.config.KpNodeCores), scaler.config.KpNodeNameRegex)
 	if err != nil {
 		logger.ErrorLog.Fatalf("Failed to get unschedulable resources: %s", err.Error())
 	}
@@ -422,7 +422,7 @@ func (scaler *ProxmoxScaler) selectScaleDownTarget(scaleEvent *ScaleEvent) error
 		return fmt.Errorf("no nodes to scale down, how did we get here?")
 	}
 
-	allocatedResources, err := scaler.Kubernetes.GetAllocatedResources(scaler.config.KpNodeNameRegex)
+	allocatedResources, err := scaler.Kubernetes.GetAllocatedKpResources(scaler.config.KpNodeNameRegex)
 	if err != nil {
 		return err
 	}
@@ -487,7 +487,7 @@ func (scaler *ProxmoxScaler) GetAllocatableResources() (AllocatableResources, er
 
 func (scaler *ProxmoxScaler) GetAllocatedResources() (AllocatedResources, error) {
 	var allocatedResources AllocatedResources
-	resources, err := scaler.Kubernetes.GetAllocatedResources(scaler.config.KpNodeNameRegex)
+	resources, err := scaler.Kubernetes.GetAllocatedKpResources(scaler.config.KpNodeNameRegex)
 	if err != nil {
 		return allocatedResources, err
 	}
