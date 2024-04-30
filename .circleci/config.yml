@@ -56,7 +56,10 @@ jobs:
       - checkout
       - run:
           name: Package the helm chart
-          command: helm package chart/kproximate/ --version $CIRCLE_TAG
+          command: |
+            cd ./chart/kproximate
+            helm dependency build
+            helm package . --version $CIRCLE_TAG
       - run:
           name: Push the helm chart
           command: helm cm-push kproximate-$CIRCLE_TAG.tgz https://charts.lupinelab.co.uk
