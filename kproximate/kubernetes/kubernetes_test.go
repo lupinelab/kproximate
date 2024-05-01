@@ -12,18 +12,17 @@ import (
 	testclient "k8s.io/client-go/kubernetes/fake"
 )
 
-func NewKubernetes(objects ...runtime.Object) *KubernetesClient {
-	k := KubernetesClient{}
-	k.client = testclient.NewSimpleClientset(objects...)
-
-	return &k
+func NewKubernetesMock(objects ...runtime.Object) *KubernetesClient {
+	return &KubernetesClient{
+		client: testclient.NewSimpleClientset(objects...),
+	}
 }
 
 func TestGetUnschedulableResourcesIgnoresUnsatisfiableCpu(t *testing.T) {
 	satisfiablePodRequest, _ := resource.ParseQuantity("1")
 	unsatisfiablePodRequest, _ := resource.ParseQuantity("3")
 
-	k := NewKubernetes(
+	k := NewKubernetesMock(
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
@@ -126,7 +125,7 @@ func TestGetUnschedulableResourcesIgnoresUnsatisfiableMemory(t *testing.T) {
 	satisfiablePodRequest, _ := resource.ParseQuantity("1024Mi")
 	unsatisfiablePodRequest, _ := resource.ParseQuantity("3072Mi")
 
-	k := NewKubernetes(
+	k := NewKubernetesMock(
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
@@ -229,7 +228,7 @@ func TestGetUnschedulableResourcesIgnoresUnsatisfiableMemory(t *testing.T) {
 }
 
 func TestGetKpNodesOnlyReturnsKpNodes(t *testing.T) {
-	k := NewKubernetes(
+	k := NewKubernetesMock(
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
@@ -261,7 +260,7 @@ func TestGetKpNodesOnlyReturnsKpNodes(t *testing.T) {
 }
 
 func TestGetWorkerNodes(t *testing.T) {
-	k := NewKubernetes(
+	k := NewKubernetesMock(
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
@@ -312,7 +311,7 @@ func TestGetWorkerNodes(t *testing.T) {
 }
 
 func TestGetKpNodes(t *testing.T) {
-	k := NewKubernetes(
+	k := NewKubernetesMock(
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
@@ -359,7 +358,7 @@ func TestGetKpNodes(t *testing.T) {
 }
 
 func TestCordonKpNode(t *testing.T) {
-	k := NewKubernetes(
+	k := NewKubernetesMock(
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
@@ -395,7 +394,7 @@ func TestCordonKpNode(t *testing.T) {
 }
 
 func TestDeleteKpNode(t *testing.T) {
-	k := NewKubernetes(
+	k := NewKubernetesMock(
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",

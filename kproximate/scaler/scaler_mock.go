@@ -36,7 +36,3 @@ func (m Mock) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
 func (m Mock) DeleteNode(kpNodeName string) error {
 	return nil
 }
-
-// func NewMock() Scaler {
-// 	return Mock{}
-// }
