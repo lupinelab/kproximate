@@ -14,7 +14,7 @@ import (
 
 func TestRequiredScaleEventsFor1CPU(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			UnschedulableResources: kubernetes.UnschedulableResources{
 				Cpu:    1.0,
 				Memory: 0,
@@ -41,7 +41,7 @@ func TestRequiredScaleEventsFor1CPU(t *testing.T) {
 
 func TestRequiredScaleEventsFor3CPU(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			UnschedulableResources: kubernetes.UnschedulableResources{
 				Cpu:    3.0,
 				Memory: 0,
@@ -68,7 +68,7 @@ func TestRequiredScaleEventsFor3CPU(t *testing.T) {
 
 func TestRequiredScaleEventsFor1024MBMemory(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			UnschedulableResources: kubernetes.UnschedulableResources{
 				Cpu:    0,
 				Memory: 1073741824,
@@ -95,7 +95,7 @@ func TestRequiredScaleEventsFor1024MBMemory(t *testing.T) {
 
 func TestRequiredScaleEventsFor3072MBMemory(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			UnschedulableResources: kubernetes.UnschedulableResources{
 				Cpu:    0,
 				Memory: 3221225472,
@@ -122,7 +122,7 @@ func TestRequiredScaleEventsFor3072MBMemory(t *testing.T) {
 
 func TestRequiredScaleEventsFor1CPU3072MBMemory(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			UnschedulableResources: kubernetes.UnschedulableResources{
 				Cpu:    1,
 				Memory: 3221225472,
@@ -149,7 +149,7 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory(t *testing.T) {
 
 func TestRequiredScaleEventsFor1CPU3072MBMemory1QueuedEvent(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			UnschedulableResources: kubernetes.UnschedulableResources{
 				Cpu:    1,
 				Memory: 3221225472,
@@ -176,7 +176,7 @@ func TestRequiredScaleEventsFor1CPU3072MBMemory1QueuedEvent(t *testing.T) {
 
 func TestSelectTargetHosts(t *testing.T) {
 	s := ProxmoxScaler{
-		Proxmox: &proxmox.Mock{
+		Proxmox: &proxmox.ProxmoxMock{
 			ClusterStats: []proxmox.HostInformation{
 				{
 					Id:     "node/host-01",
@@ -306,7 +306,7 @@ func TestSelectScaleDownTarget(t *testing.T) {
 	node3.Name = "kp-node-67944692-1de7-4bd0-ac8c-de6dc178cb38"
 
 	scaler := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			KpNodes: []apiv1.Node{
 				node1,
 				node2,
@@ -346,7 +346,7 @@ func TestSelectScaleDownTarget(t *testing.T) {
 
 func TestAssessScaleDownIsAcceptable(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			AllocatedResources: map[string]kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
 					Cpu:    1.0,
@@ -387,7 +387,7 @@ func TestAssessScaleDownIsAcceptable(t *testing.T) {
 
 func TestAssessScaleDownIsUnacceptable(t *testing.T) {
 	s := ProxmoxScaler{
-		Kubernetes: &kubernetes.Mock{
+		Kubernetes: &kubernetes.KubernetesMock{
 			AllocatedResources: map[string]kubernetes.AllocatedResources{
 				"kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd": {
 					Cpu:    2.0,
@@ -435,7 +435,7 @@ func TestAssessScaleDownIsUnacceptable(t *testing.T) {
 
 func TestJoinByQemuExecSuccess(t *testing.T) {
 	s := ProxmoxScaler{
-		Proxmox: &proxmox.Mock{
+		Proxmox: &proxmox.ProxmoxMock{
 			JoinExecPid: 1,
 			QemuExecJoinStatus: proxmox.QemuExecStatus{
 				Exited:   1,
@@ -459,7 +459,7 @@ func TestJoinByQemuExecSuccess(t *testing.T) {
 
 func TestJoinByQemuExecFail(t *testing.T) {
 	s := ProxmoxScaler{
-		Proxmox: &proxmox.Mock{
+		Proxmox: &proxmox.ProxmoxMock{
 			JoinExecPid: 1,
 			QemuExecJoinStatus: proxmox.QemuExecStatus{
 				Exited:   1,

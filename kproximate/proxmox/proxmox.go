@@ -65,8 +65,24 @@ type Proxmox interface {
 	CheckNodeReady(ctx context.Context, okchan chan<- bool, errchan chan<- error, nodeName string)
 }
 
+type ProxmoxClientInterface interface {
+	CloneQemuVm(vmr *proxmox.VmRef, vmParams map[string]interface{}) (exitStatus string, err error)
+	DeleteVm(vmr *proxmox.VmRef) (exitStatus string, err error)
+	GetExecStatus(vmr *proxmox.VmRef, pid string) (status map[string]interface{}, err error)
+	GetNextID(currentID int) (nextID int, err error)
+	GetResourceList(resourceType string) (list []interface{}, err error)
+	GetVmList() (map[string]interface{}, error)
+	GetVmRefByName(vmName string) (vmr *proxmox.VmRef, err error)
+	GetVmRefsByName(vmName string) (vmrs []*proxmox.VmRef, err error)
+	QemuAgentExec(vmr *proxmox.VmRef, params map[string]interface{}) (result map[string]interface{}, err error)
+	QemuAgentPing(vmr *proxmox.VmRef) (pingRes map[string]interface{}, err error)
+	SetVmConfig(vmr *proxmox.VmRef, params map[string]interface{}) (exitStatus interface{}, err error)
+	StartVm(vmr *proxmox.VmRef) (exitStatus string, err error)
+	StopVm(vmr *proxmox.VmRef) (exitStatus string, err error)
+}
+
 type ProxmoxClient struct {
-	client *proxmox.Client
+	client ProxmoxClientInterface
 }
 
 var userRequiresTokenRegex = regexp.MustCompile("[a-z0-9]+@[a-z0-9]+![a-z0-9]+")
@@ -116,6 +132,30 @@ func (p *ProxmoxClient) GetClusterStats() ([]HostInformation, error) {
 	return pHosts, nil
 }
 
+func (p *ProxmoxClient) GetAllKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmInformation, error) {
+	result, err := p.client.GetVmList()
+	if err != nil {
+		return nil, err
+	}
+
+	var vmlist vmList
+
+	err = mapstructure.Decode(result, &vmlist)
+	if err != nil {
+		return nil, err
+	}
+
+	var kpNodes []VmInformation
+
+	for _, vm := range vmlist.Data {
+		if kpNodeNameRegex.MatchString(vm.Name) {
+			kpNodes = append(kpNodes, vm)
+		}
+	}
+
+	return kpNodes, err
+}
+
 func (p *ProxmoxClient) GetRunningKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmInformation, error) {
 	kpNodes, err := p.GetAllKpNodes(kpNodeNameRegex)
 	if err != nil {
@@ -131,30 +171,6 @@ func (p *ProxmoxClient) GetRunningKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmIn
 	}
 
 	return runningKpNodes, nil
-}
-
-func (p *ProxmoxClient) GetAllKpNodes(kpNodeNameRegex regexp.Regexp) ([]VmInformation, error) {
-	vmlist, err := p.client.GetVmList()
-	if err != nil {
-		return nil, err
-	}
-
-	var kpnodes vmList
-
-	err = mapstructure.Decode(vmlist, &kpnodes)
-	if err != nil {
-		return nil, err
-	}
-
-	var kpNodes []VmInformation
-
-	for _, vm := range kpnodes.Data {
-		if kpNodeNameRegex.MatchString(vm.Name) {
-			kpNodes = append(kpNodes, vm)
-		}
-	}
-
-	return kpNodes, err
 }
 
 func (p *ProxmoxClient) GetKpNode(kpNodeName string, kpNodeNameRegex regexp.Regexp) (VmInformation, error) {
@@ -188,7 +204,7 @@ func (p *ProxmoxClient) GetKpNodeTemplateRef(kpNodeTemplateName string, localTem
 		return vmRefs[0], nil
 	}
 
-	return nil, fmt.Errorf("could not find template on target node")
+	return nil, fmt.Errorf("could not find template: %s", kpNodeTemplateName)
 }
 
 func (p *ProxmoxClient) NewKpNode(
@@ -267,8 +283,8 @@ func (p *ProxmoxClient) CheckNodeReady(ctx context.Context, okchan chan<- bool, 
 	okchan <- true
 }
 
-func (p *ProxmoxClient) QemuExecJoin(nodeName string, joinCommand string) (int, error) {
-	vmRef, err := p.client.GetVmRefByName(nodeName)
+func (p *ProxmoxClient) QemuExecJoin(kpNodeName string, joinCommand string) (int, error) {
+	vmRef, err := p.client.GetVmRefByName(kpNodeName)
 	if err != nil {
 		return 0, err
 	}
@@ -289,11 +305,11 @@ func (p *ProxmoxClient) QemuExecJoin(nodeName string, joinCommand string) (int, 
 		return 0, err
 	}
 
-	return response.Pid, err
+	return response.Pid, nil
 }
 
-func (p *ProxmoxClient) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error) {
-	vmRef, err := p.client.GetVmRefByName(nodeName)
+func (p *ProxmoxClient) GetQemuExecJoinStatus(kpNodeName string, pid int) (QemuExecStatus, error) {
+	vmRef, err := p.client.GetVmRefByName(kpNodeName)
 	if err != nil {
 		return QemuExecStatus{}, err
 	}
@@ -310,7 +326,7 @@ func (p *ProxmoxClient) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExe
 		return QemuExecStatus{}, err
 	}
 
-	return status, err
+	return status, nil
 }
 
 func (p *ProxmoxClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {
@@ -328,6 +344,7 @@ func (p *ProxmoxClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) erro
 	if err != nil {
 		return err
 	}
+
 	if !exitStatusSuccess.MatchString(exitStatus) {
 		err = fmt.Errorf(exitStatus)
 		return err
@@ -337,6 +354,7 @@ func (p *ProxmoxClient) DeleteKpNode(name string, kpNodeName regexp.Regexp) erro
 	if err != nil {
 		return err
 	}
+
 	if !exitStatusSuccess.MatchString(exitStatus) {
 		err = fmt.Errorf(exitStatus)
 		return err

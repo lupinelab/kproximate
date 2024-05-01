@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type Mock struct {
+type KubernetesMock struct {
 	CordonedNodes                          []string
 	DeletedNodes                           []string
 	AllocatedResources                     map[string]AllocatedResources
@@ -18,23 +18,23 @@ type Mock struct {
 	KpNodes                                []apiv1.Node
 }
 
-func (m *Mock) GetUnschedulableResources(kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error) {
+func (m *KubernetesMock) GetUnschedulableResources(kpNodeCores int64, kpNodeNameRegex regexp.Regexp) (UnschedulableResources, error) {
 	return m.UnschedulableResources, nil
 }
 
-func (m *Mock) IsUnschedulableDueToControlPlaneTaint() (bool, error) {
+func (m *KubernetesMock) IsUnschedulableDueToControlPlaneTaint() (bool, error) {
 	return m.FailedSchedulingDueToControlPlaneTaint, nil
 }
 
-func (m *Mock) GetWorkerNodes() ([]apiv1.Node, error) {
+func (m *KubernetesMock) GetWorkerNodes() ([]apiv1.Node, error) {
 	return nil, nil
 }
 
-func (m *Mock) GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error) {
+func (m *KubernetesMock) GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error) {
 	return m.WorkerNodesAllocatableResources, nil
 }
 
-func (m *Mock) GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node, error) {
+func (m *KubernetesMock) GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node, error) {
 	if m.KpNodes != nil {
 		return m.KpNodes, nil
 	}
@@ -55,19 +55,19 @@ func (m *Mock) GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node, error) {
 	return nodes, nil
 }
 
-func (m *Mock) GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
+func (m *KubernetesMock) GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
 	return m.AllocatedResources, nil
 }
 
-func (m *Mock) CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
+func (m *KubernetesMock) CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
 }
 
-func (m *Mock) DeleteKpNode(kpNodeName string) error {
+func (m *KubernetesMock) DeleteKpNode(kpNodeName string) error {
 	m.DeletedNodes = append(m.DeletedNodes, kpNodeName)
 	return nil
 }
 
-func (m *Mock) CordonKpNode(KpNodeName string) error {
+func (m *KubernetesMock) CordonKpNode(KpNodeName string) error {
 	m.CordonedNodes = append(m.CordonedNodes, KpNodeName)
 	return nil
 }

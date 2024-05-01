@@ -7,7 +7,7 @@ import (
 	"github.com/Telmate/proxmox-api-go/proxmox"
 )
 
-type Mock struct {
+type ProxmoxMock struct {
 	ClusterStats       []HostInformation
 	RunningKpNodes     []VmInformation
 	KpNodes            []VmInformation
@@ -17,40 +17,40 @@ type Mock struct {
 	QemuExecJoinStatus QemuExecStatus
 }
 
-func (p *Mock) GetClusterStats() ([]HostInformation, error) {
+func (p *ProxmoxMock) GetClusterStats() ([]HostInformation, error) {
 	return p.ClusterStats, nil
 }
 
-func (p *Mock) GetRunningKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
+func (p *ProxmoxMock) GetRunningKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
 	return p.RunningKpNodes, nil
 }
 
-func (p *Mock) GetAllKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
+func (p *ProxmoxMock) GetAllKpNodes(kpNodeName regexp.Regexp) ([]VmInformation, error) {
 	return p.KpNodes, nil
 }
 
-func (p *Mock) GetKpNode(name string, kpNodeName regexp.Regexp) (VmInformation, error) {
+func (p *ProxmoxMock) GetKpNode(name string, kpNodeName regexp.Regexp) (VmInformation, error) {
 	return p.KpNode, nil
 }
 
-func (p *Mock) GetKpNodeTemplateRef(kpNodeTemplateName string, LocalTemplateStorage bool, cloneTargetNode string) (*proxmox.VmRef, error) {
+func (p *ProxmoxMock) GetKpNodeTemplateRef(kpNodeTemplateName string, LocalTemplateStorage bool, cloneTargetNode string) (*proxmox.VmRef, error) {
 	return &p.KpNodeTemplateRef, nil
 }
 
-func (p *Mock) NewKpNode(ctx context.Context, okchan chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, usingLocalStorage bool, kpNodeTemplateName string, kpJoinCommand string) {
+func (p *ProxmoxMock) NewKpNode(ctx context.Context, okchan chan<- bool, errchan chan<- error, newKpNodeName string, targetNode string, kpNodeParams map[string]interface{}, usingLocalStorage bool, kpNodeTemplateName string, kpJoinCommand string) {
 }
 
-func (p *Mock) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {
+func (p *ProxmoxMock) DeleteKpNode(name string, kpNodeName regexp.Regexp) error {
 	return nil
 }
 
-func (p *Mock) QemuExecJoin(nodeName string, joinCommand string) (int, error) {
+func (p *ProxmoxMock) QemuExecJoin(nodeName string, joinCommand string) (int, error) {
 	return p.JoinExecPid, nil
 }
 
-func (p *Mock) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error) {
+func (p *ProxmoxMock) GetQemuExecJoinStatus(nodeName string, pid int) (QemuExecStatus, error) {
 	return p.QemuExecJoinStatus, nil
 }
 
-func (p *Mock) CheckNodeReady(ctx context.Context, okchan chan<- bool, errchan chan<- error, nodeName string) {
+func (p *ProxmoxMock) CheckNodeReady(ctx context.Context, okchan chan<- bool, errchan chan<- error, nodeName string) {
 }
