@@ -63,11 +63,16 @@ spec:
       initContainers:
       - name: controller-wait-for-rabbitmq
         image: curlimages/curl
+        envFrom:
+          - configMapRef:
+              name: {{ include "kproximate.fullname" . }}
+          - secretRef:
+              name: {{ include "kproximate.fullname" . }}
         args:
         - /bin/sh
         - -c
         - >
           set -x;
-          while [ $(curl -sw '%{http_code}' --user {{ .Values.rabbitmq.auth.username }}:{{ .Values.rabbitmq.auth.password }} "http://{{ .Values.kproximate.config.rabbitMQHost }}:15672/api/health/checks/local-alarms" -o /dev/null) -ne 200 ]; do
+          while [ $(curl -sw '%{http_code}' --user ${rabbitMQUser}:${rabbitMQPassword} "http://${rabbitMQHost}:15672/api/health/checks/local-alarms" -o /dev/null) -ne 200 ]; do
             sleep 5;
           done
