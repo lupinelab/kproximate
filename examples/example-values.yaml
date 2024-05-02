@@ -11,5 +11,8 @@ kproximate:
 
   secrets:
     pmToken: <proxmox-api-token>
-    rabbitmqPassword: <set-rabbitmq-password-here>
     sshKey: <ssh-public-key>
+
+rabbitmq:
+  auth:
+    password: <set-rabbitmq-password-here>

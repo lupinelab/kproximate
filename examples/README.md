@@ -102,4 +102,4 @@ Install kproximate:
 
 `helm install kproximate lupinelab/kproximate -f your-values.yaml -n kproximate --create-namespace`
 
-See [values.yaml](https://github.com/lupinelab/kproximate/tree/main/chart/kproximate/values.yaml) in the helm chart for the full set of configuration options and defaults:
+See [values.yaml](https://github.com/lupinelab/kproximate/tree/main/chart/kproximate/values.yaml) in the helm chart for the full set of configuration options and defaults.
