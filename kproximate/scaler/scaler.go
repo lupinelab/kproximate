@@ -14,7 +14,7 @@ type Scaler interface {
 	NumNodes() (int, error)
 	AssessScaleDown() (*ScaleEvent, error)
 	ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error
-	DeleteNode(kpNodeName string) error
+	DeleteNode(ctx context.Context, kpNodeName string) error
 	GetResourceStatistics() (ResourceStatistics, error)
 }
 

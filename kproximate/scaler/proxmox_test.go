@@ -375,12 +375,10 @@ func TestAssessScaleDownIsAcceptable(t *testing.T) {
 
 	scaleEvent, _ := s.AssessScaleDown()
 
-	if scaleEvent.NodeName == "" {
-		t.Error("scaleEvent had no NodeName")
-	}
-
 	if scaleEvent == nil {
 		t.Error("AssessScaleDown returned nil")
+	} else if scaleEvent.NodeName == "" {
+		t.Error("scaleEvent had no NodeName")
 	}
 
 }

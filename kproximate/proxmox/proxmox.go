@@ -12,6 +12,7 @@ import (
 )
 
 var exitStatusSuccess = regexp.MustCompile(`^(OK|WARNINGS)`)
+var userRequiresTokenRegex = regexp.MustCompile("[a-z0-9]+@[a-z0-9]+![a-z0-9]+")
 
 type HostInformation struct {
 	Id     string  `json:"id"`
@@ -84,8 +85,6 @@ type ProxmoxClientInterface interface {
 type ProxmoxClient struct {
 	client ProxmoxClientInterface
 }
-
-var userRequiresTokenRegex = regexp.MustCompile("[a-z0-9]+@[a-z0-9]+![a-z0-9]+")
 
 func userRequiresAPIToken(pmUser string) bool {
 	return userRequiresTokenRegex.MatchString(pmUser)

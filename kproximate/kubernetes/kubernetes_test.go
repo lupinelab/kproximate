@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"testing"
@@ -131,6 +132,12 @@ func TestGetUnschedulableResourcesIgnoresUnsatisfiableMemory(t *testing.T) {
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
 			},
 			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
 				Allocatable: apiv1.ResourceList{
 					apiv1.ResourceMemory: maxMemorySatisfiable,
 				},
@@ -233,15 +240,39 @@ func TestGetKpNodesOnlyReturnsKpNodes(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
 			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
+			},
 		},
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a",
 			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
+			},
 		},
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "pickle",
+			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
 			},
 		},
 	)
@@ -265,10 +296,26 @@ func TestGetWorkerNodes(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
 			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
+			},
 		},
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "not-a-kp-worker-node",
+			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
 			},
 		},
 		&apiv1.Node{
@@ -278,12 +325,28 @@ func TestGetWorkerNodes(t *testing.T) {
 					"node-role.kubernetes.io/master": "true",
 				},
 			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
+			},
 		},
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "k3s-control-plane",
 				Labels: map[string]string{
 					"node-role.kubernetes.io/control-plane": "true",
+				},
+			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
 				},
 			},
 		},
@@ -316,10 +379,26 @@ func TestGetKpNodes(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd",
 			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
+			},
 		},
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "not-a-kp-worker-node",
+			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
 			},
 		},
 		&apiv1.Node{
@@ -329,12 +408,28 @@ func TestGetKpNodes(t *testing.T) {
 					"node-role.kubernetes.io/master": "true",
 				},
 			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
+				},
+			},
 		},
 		&apiv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "k3s-control-plane",
 				Labels: map[string]string{
 					"node-role.kubernetes.io/control-plane": "true",
+				},
+			},
+			Status: apiv1.NodeStatus{
+				Conditions: []apiv1.NodeCondition{
+					{
+						Type:   apiv1.NodeReady,
+						Status: "True",
+					},
 				},
 			},
 		},
@@ -371,7 +466,7 @@ func TestCordonKpNode(t *testing.T) {
 		},
 	)
 
-	err := k.CordonKpNode("kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a")
+	err := k.cordonKpNode(context.TODO(), "kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a")
 	if err != nil {
 		t.Error(err)
 	}
@@ -407,7 +502,7 @@ func TestDeleteKpNode(t *testing.T) {
 		},
 	)
 
-	err := k.DeleteKpNode("kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a")
+	err := k.DeleteKpNode(context.TODO(), "kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a")
 	if err != nil {
 		t.Error(err)
 	}
@@ -422,5 +517,56 @@ func TestDeleteKpNode(t *testing.T) {
 		if node.Name == "kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a" {
 			t.Errorf("Expected 'kp-node-a4f77d63-a944-425d-a980-e7be925b8a6a' to be deleted.")
 		}
+	}
+}
+
+func TestLabelNode(t *testing.T) {
+	kpNodeName := "kp-node-163c3d58-4c4d-426d-baef-e0c30ecb5fcd"
+	k := NewKubernetesMock(
+		&apiv1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: kpNodeName,
+				Labels: map[string]string{
+					"node-role.kubernetes.io/control-plane": "true",
+				},
+			},
+		},
+	)
+
+	newKpNodeLabels := map[string]string{
+		"topology.kubernetes.io/region": "tc",
+		"topology.kubernetes.io/zone2":  "tc-01",
+	}
+
+	err := k.LabelKpNode(kpNodeName, newKpNodeLabels)
+	if err != nil {
+		t.Error(err)
+	}
+
+	kpNode, err := k.client.CoreV1().Nodes().Get(
+		context.TODO(),
+		kpNodeName,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	for key, value := range newKpNodeLabels {
+		labelvalue, ok := kpNode.Labels[key]
+		if ok {
+			if labelvalue != value {
+				t.Errorf("Expected %s label: %s:%s", kpNodeName, key, value)
+			}
+		}
+	}
+
+	value, ok := kpNode.Labels["node-role.kubernetes.io/control-plane"]
+	if !ok {
+		t.Errorf("Expected %s label node-role.kubernetes.io/control-plane to exist", kpNodeName)
+		return
+	}
+	if value != "true" {
+		t.Errorf("Expected %s label: %s:%s", kpNodeName, "node-role.kubernetes.io/control-plane", "true")
 	}
 }

@@ -1,5 +1,6 @@
 set_env.sh
 dev-values.yaml
 test-pod.yaml
+unschedulable.yaml
 
 chart/kproximate/charts/*.tgz

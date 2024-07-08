@@ -54,7 +54,7 @@ virt-customize \
         --truncate /etc/machine-id
 
 # Build a vm from which to create a proxmox template
-qm create $VMID --name $NAME --memory 2048 --balloon 1024 --cpu cputype=host --cores 2 --net0 virtio,bridge=vmbr0,firewall=1 --bios ovmf
+qm create $VMID --name $NAME --memory 2048 --cpu cputype=host --cores 2 --net0 virtio,bridge=vmbr0,firewall=1 --bios ovmf
 if [[ -n "$VLAN" ]]
 then
     qm set $VMID --net0 virtio,bridge=vmbr0,firewall=1,tag=$VLAN

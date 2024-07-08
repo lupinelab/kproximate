@@ -55,19 +55,18 @@ func (m *KubernetesMock) GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node
 	return nodes, nil
 }
 
-func (m *KubernetesMock) GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
+func (m *KubernetesMock) GetKpNodesAllocatedResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
 	return m.AllocatedResources, nil
 }
 
 func (m *KubernetesMock) CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string) {
 }
 
-func (m *KubernetesMock) DeleteKpNode(kpNodeName string) error {
+func (m *KubernetesMock) DeleteKpNode(ctx context.Context, kpNodeName string) error {
 	m.DeletedNodes = append(m.DeletedNodes, kpNodeName)
 	return nil
 }
 
-func (m *KubernetesMock) CordonKpNode(KpNodeName string) error {
-	m.CordonedNodes = append(m.CordonedNodes, KpNodeName)
+func (k *KubernetesMock) LabelKpNode(kpNodeName string, newKpNodeLabels map[string]string) error {
 	return nil
 }

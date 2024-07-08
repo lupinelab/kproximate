@@ -22,3 +22,6 @@ rules:
 - apiGroups: ["extensions"]
   resources: ["daemonsets", "replicasets"]
   verbs: ["get", "list"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["volumeattachments"]
+  verbs: ["list", "delete"]

@@ -16,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
+var templateLabelRegex = regexp.MustCompile(`^{{(.*)}}$`)
+
 type ProxmoxScaler struct {
 	config     config.KproximateConfig
 	Kubernetes kubernetes.Kubernetes
@@ -226,6 +228,26 @@ func waitForNodeJoin(ctx context.Context, cancel context.CancelFunc, scaleEvent 
 	}
 }
 
+func (scaler *ProxmoxScaler) labelNode(scaleEvent *ScaleEvent) error {
+	labels := map[string]string{}
+	for _, label := range strings.Split(scaler.config.KpNodeLabels, ",") {
+		key := strings.Split(label, "=")[0]
+		value := strings.Split(label, "=")[1]
+		if templateLabelRegex.MatchString(value) {
+			template := strings.Trim(templateLabelRegex.FindStringSubmatch(value)[1], " ")
+			if template != "targetHost" {
+				logger.WarningLog.Printf("Found invalid label value template %s for key %s, skipping label.", value, template)
+				continue
+			}
+			value = scaleEvent.TargetHost.Node
+		}
+
+		labels[key] = value
+	}
+
+	return scaler.Kubernetes.LabelKpNode(scaleEvent.NodeName, labels)
+}
+
 func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
 	logger.InfoLog.Printf("Provisioning %s on %s", scaleEvent.NodeName, scaleEvent.TargetHost.Node)
 
@@ -304,6 +326,15 @@ func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent
 	}
 
 	logger.InfoLog.Printf("%s joined kubernetes cluster", scaleEvent.NodeName)
+
+	if scaler.config.KpNodeLabels != "" {
+		err := scaler.labelNode(scaleEvent)
+		if err != nil {
+			return err
+		}
+
+		logger.InfoLog.Printf("Set labels on %s", scaleEvent.NodeName)
+	}
 
 	return nil
 }
@@ -422,7 +453,7 @@ func (scaler *ProxmoxScaler) selectScaleDownTarget(scaleEvent *ScaleEvent) error
 		return fmt.Errorf("no nodes to scale down, how did we get here?")
 	}
 
-	allocatedResources, err := scaler.Kubernetes.GetAllocatedKpResources(scaler.config.KpNodeNameRegex)
+	allocatedResources, err := scaler.Kubernetes.GetKpNodesAllocatedResources(scaler.config.KpNodeNameRegex)
 	if err != nil {
 		return err
 	}
@@ -454,7 +485,7 @@ func (scaler *ProxmoxScaler) NumNodes() (int, error) {
 }
 
 func (scaler *ProxmoxScaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEvent) error {
-	err := scaler.Kubernetes.DeleteKpNode(scaleEvent.NodeName)
+	err := scaler.Kubernetes.DeleteKpNode(ctx, scaleEvent.NodeName)
 	if err != nil {
 		return err
 	}
@@ -464,8 +495,8 @@ func (scaler *ProxmoxScaler) ScaleDown(ctx context.Context, scaleEvent *ScaleEve
 
 // This function is only used when it is unclear whether a node has joined the kubernetes cluster
 // ie when cleaning up after a failed scaling event
-func (scaler *ProxmoxScaler) DeleteNode(kpNodeName string) error {
-	_ = scaler.Kubernetes.DeleteKpNode(kpNodeName)
+func (scaler *ProxmoxScaler) DeleteNode(ctx context.Context, kpNodeName string) error {
+	_ = scaler.Kubernetes.DeleteKpNode(ctx, kpNodeName)
 
 	return scaler.Proxmox.DeleteKpNode(kpNodeName, scaler.config.KpNodeNameRegex)
 }
@@ -487,7 +518,7 @@ func (scaler *ProxmoxScaler) GetAllocatableResources() (AllocatableResources, er
 
 func (scaler *ProxmoxScaler) GetAllocatedResources() (AllocatedResources, error) {
 	var allocatedResources AllocatedResources
-	resources, err := scaler.Kubernetes.GetAllocatedKpResources(scaler.config.KpNodeNameRegex)
+	resources, err := scaler.Kubernetes.GetKpNodesAllocatedResources(scaler.config.KpNodeNameRegex)
 	if err != nil {
 		return allocatedResources, err
 	}

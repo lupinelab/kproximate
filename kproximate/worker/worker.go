@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/lupinelab/kproximate/config"
 	"github.com/lupinelab/kproximate/logger"
@@ -85,7 +86,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sigChan := make(chan os.Signal)
+	sigChan := make(chan os.Signal, 1)
 	go func() {
 		<-sigChan
 		cancel()
@@ -113,7 +114,7 @@ func consumeScaleUpMsg(ctx context.Context, kpScaler scaler.Scaler, scaleUpMsg a
 	json.Unmarshal(scaleUpMsg.Body, &scaleUpEvent)
 
 	if scaleUpMsg.Redelivered {
-		kpScaler.DeleteNode(scaleUpEvent.NodeName)
+		kpScaler.DeleteNode(ctx, scaleUpEvent.NodeName)
 		logger.InfoLog.Printf("Retrying scale up event: %s", scaleUpEvent.NodeName)
 	} else {
 		logger.InfoLog.Printf("Triggered scale up event: %s", scaleUpEvent.NodeName)
@@ -122,7 +123,7 @@ func consumeScaleUpMsg(ctx context.Context, kpScaler scaler.Scaler, scaleUpMsg a
 	err := kpScaler.ScaleUp(ctx, scaleUpEvent)
 	if err != nil {
 		logger.WarningLog.Printf("Scale up event failed: %s", err.Error())
-		kpScaler.DeleteNode(scaleUpEvent.NodeName)
+		kpScaler.DeleteNode(ctx, scaleUpEvent.NodeName)
 		scaleUpMsg.Reject(true)
 		return
 	}
@@ -140,7 +141,10 @@ func consumeScaleDownMsg(ctx context.Context, kpScaler scaler.Scaler, scaleDownM
 		logger.InfoLog.Printf("Triggered scale down event: %s", scaleDownEvent.NodeName)
 	}
 
-	err := kpScaler.ScaleDown(ctx, scaleDownEvent)
+	scaleCtx, scaleCancel := context.WithDeadline(ctx, time.Now().Add(time.Second*300))
+	defer scaleCancel()
+
+	err := kpScaler.ScaleDown(scaleCtx, scaleDownEvent)
 	if err != nil {
 		logger.WarningLog.Printf("Scale down event failed: %s", err.Error())
 		scaleDownMsg.Reject(true)

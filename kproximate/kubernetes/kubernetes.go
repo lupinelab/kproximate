@@ -2,19 +2,23 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/lupinelab/kproximate/logger"
 	apiv1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -27,10 +31,10 @@ type Kubernetes interface {
 	GetWorkerNodes() ([]apiv1.Node, error)
 	GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error)
 	GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.Node, error)
-	GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error)
+	LabelKpNode(kpNodeName string, kpNodeLabels map[string]string) error
+	GetKpNodesAllocatedResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error)
 	CheckForNodeJoin(ctx context.Context, ok chan<- bool, newKpNodeName string)
-	DeleteKpNode(kpNodeName string) error
-	CordonKpNode(KpNodeName string) error
+	DeleteKpNode(ctx context.Context, kpNodeName string) error
 }
 
 type KubernetesClient struct {
@@ -168,7 +172,6 @@ func (k *KubernetesClient) IsUnschedulableDueToControlPlaneTaint() (bool, error)
 // Worker nodes should comprise of all kpNodes and any additional worker nodes
 // in the cluster that are not managed by kproximate
 func (k *KubernetesClient) GetWorkerNodes() ([]apiv1.Node, error) {
-
 	noControlPlaneLabel, err := labels.NewRequirement(
 		"node-role.kubernetes.io/control-plane",
 		selection.DoesNotExist,
@@ -203,7 +206,17 @@ func (k *KubernetesClient) GetWorkerNodes() ([]apiv1.Node, error) {
 		return nil, err
 	}
 
-	return nodes.Items, err
+	workerNodes := []apiv1.Node{}
+	for _, node := range nodes.Items {
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == apiv1.NodeReady && condition.Status == apiv1.ConditionTrue {
+				workerNodes = append(workerNodes, node)
+
+			}
+		}
+	}
+
+	return workerNodes, err
 }
 
 func (k *KubernetesClient) GetWorkerNodesAllocatableResources() (WorkerNodesAllocatableResources, error) {
@@ -238,7 +251,7 @@ func (k *KubernetesClient) GetKpNodes(kpNodeNameRegex regexp.Regexp) ([]apiv1.No
 	return kpNodes, err
 }
 
-func (k *KubernetesClient) GetAllocatedKpResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
+func (k *KubernetesClient) GetKpNodesAllocatedResources(kpNodeNameRegex regexp.Regexp) (map[string]AllocatedResources, error) {
 	kpNodes, err := k.GetKpNodes(kpNodeNameRegex)
 	if err != nil {
 		return nil, err
@@ -289,49 +302,9 @@ func (k *KubernetesClient) CheckForNodeJoin(ctx context.Context, ok chan<- bool,
 	}
 }
 
-func (k *KubernetesClient) DeleteKpNode(kpNodeName string) error {
-	err := k.CordonKpNode(kpNodeName)
-	if err != nil {
-		return err
-	}
-
-	pods, err := k.client.CoreV1().Pods("").List(
-		context.TODO(),
-		metav1.ListOptions{
-			FieldSelector: fmt.Sprintf("spec.nodeName=%s", kpNodeName),
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	for _, pod := range pods.Items {
-		k.client.PolicyV1().Evictions(pod.Namespace).Evict(
-			context.TODO(),
-			&policyv1.Eviction{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      pod.Name,
-					Namespace: pod.Namespace,
-				},
-			},
-		)
-	}
-
-	err = k.client.CoreV1().Nodes().Delete(
-		context.TODO(),
-		kpNodeName,
-		metav1.DeleteOptions{},
-	)
-	if err != nil {
-		return err
-	}
-
-	return err
-}
-
-func (k *KubernetesClient) CordonKpNode(kpNodeName string) error {
+func (k *KubernetesClient) cordonKpNode(ctx context.Context, kpNodeName string) error {
 	kpNode, err := k.client.CoreV1().Nodes().Get(
-		context.TODO(),
+		ctx,
 		kpNodeName,
 		metav1.GetOptions{},
 	)
@@ -342,8 +315,130 @@ func (k *KubernetesClient) CordonKpNode(kpNodeName string) error {
 	kpNode.Spec.Unschedulable = true
 
 	_, err = k.client.CoreV1().Nodes().Update(
+		ctx,
+		kpNode,
+		metav1.UpdateOptions{},
+	)
+
+	return err
+}
+
+func (k *KubernetesClient) waitForPodsDelete(ctx context.Context, evictedPods *apiv1.PodList, kpNodeName string) error {
+	err := wait.PollUntilContextCancel(
+		ctx,
+		time.Duration(time.Second*5),
+		true,
+		func(ctx context.Context) (bool, error) {
+			var err error
+			deleted := true
+			for _, evictedPod := range evictedPods.Items {
+				pod, err := k.client.CoreV1().Pods(evictedPod.Namespace).Get(
+					ctx,
+					evictedPod.Name,
+					metav1.GetOptions{},
+				)
+
+				if pod.Spec.NodeName != kpNodeName || apierrors.IsNotFound(err) {
+					continue
+				} else {
+					deleted = false
+				}
+			}
+
+			return deleted, err
+		},
+	)
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+
+	return err
+}
+
+func (k *KubernetesClient) drainKpNode(ctx context.Context, kpNodeName string) error {
+	pods, err := k.client.CoreV1().Pods("").List(
+		ctx,
+		metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("spec.nodeName=%s", kpNodeName),
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	evictedPods := &apiv1.PodList{}
+	for _, pod := range pods.Items {
+		if pod.OwnerReferences[0].Kind != "DaemonSet" {
+			err = k.client.PolicyV1().Evictions(pod.Namespace).Evict(
+				ctx,
+				&policyv1.Eviction{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      pod.Name,
+						Namespace: pod.Namespace,
+					},
+				},
+			)
+			if err != nil {
+				return err
+			}
+
+			evictedPods.Items = append(evictedPods.Items, pod)
+		}
+	}
+
+	err = k.waitForPodsDelete(ctx, evictedPods, kpNodeName)
+	if err != nil {
+		return err
+	}
+
+	return err
+}
+
+func (k *KubernetesClient) DeleteKpNode(ctx context.Context, kpNodeName string) error {
+	err := k.cordonKpNode(ctx, kpNodeName)
+	if err != nil {
+		return err
+	}
+
+	err = k.drainKpNode(ctx, kpNodeName)
+	if err != nil {
+		return err
+	}
+
+	err = k.client.CoreV1().Nodes().Delete(
+		ctx,
+		kpNodeName,
+		metav1.DeleteOptions{},
+	)
+	if err != nil {
+		return err
+	}
+
+	return err
+}
+
+func (k *KubernetesClient) LabelKpNode(kpNodeName string, newKpNodeLabels map[string]string) error {
+	kpNode, err := k.client.CoreV1().Nodes().Get(
 		context.TODO(),
-		kpNode, metav1.UpdateOptions{},
+		kpNodeName,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		return err
+	}
+
+	kpNodeLabels := kpNode.GetLabels()
+	for key, value := range newKpNodeLabels {
+		kpNodeLabels[key] = value
+	}
+
+	kpNode.SetLabels(kpNodeLabels)
+
+	_, err = k.client.CoreV1().Nodes().Update(
+		context.TODO(),
+		kpNode,
+		metav1.UpdateOptions{},
 	)
 
 	return err

@@ -26,6 +26,13 @@ kproximate:
     ## The amount of memory assigned to new kproximate nodes in MiB.
     kpNodeMemory: 2048
 
+    ## Set labels on kp nodes. A comma separated list of labels to apply to kp-nodes in 
+    ## the format "some.key=somevalue". It is also possible to set
+    ## values to those only known at provisioning time, currently the only supported
+    ## template value is "targetHost" which is the name of the proxmox host on which the
+    ## kp-node is provsioned e.g. "topology.kubernetes.io/zone={{ targetHost }}".
+    kpNodeLabels: ""
+
     ## The prefix to use when naming new kproximate nodes.
     kpNodeNamePrefix: kp-node
 

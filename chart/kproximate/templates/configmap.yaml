@@ -5,6 +5,7 @@ metadata:
 data:
   kpNodeCores: {{ .Values.kproximate.config.kpNodeCores | quote }}
   kpNodeDisableSsh: {{ .Values.kproximate.config.kpNodeDisableSsh | quote }}
+  kpNodeLabels: {{ .Values.config.kpNodeLabels | quote }}
   kpNodeMemory: {{ .Values.kproximate.config.kpNodeMemory | quote }}
   kpNodeNamePrefix: {{ .Values.kproximate.config.kpNodeNamePrefix | quote }}
   kpNodeTemplateName: {{ .Values.kproximate.config.kpNodeTemplateName | quote | required ".Values.kproximate.config.kpNodeTemplateName is required" }}
