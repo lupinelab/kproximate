@@ -57,34 +57,39 @@ var (
 )
 
 func recordMetrics(
+	ctx context.Context,
 	scaler scaler.Scaler,
 	config config.KproximateConfig,
 ) {
 	for {
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(5 * time.Second)
 
-		numKpNodes, _ := scaler.NumNodes()
-		totalKpNodes.Set(float64(numKpNodes))
+			numKpNodes, _ := scaler.NumNodes()
+			totalKpNodes.Set(float64(numKpNodes))
 
-		runningNodes, _ := scaler.NumReadyNodes()
-		runningKpNodes.Set(float64(runningNodes))
+			runningNodes, _ := scaler.NumReadyNodes()
+			runningKpNodes.Set(float64(runningNodes))
 
-		totalProvisionedCpu.Set(float64(runningNodes * config.KpNodeCores))
-		totalProvisionedMemory.Set(float64(runningNodes * (config.KpNodeMemory << 20)))
+			totalProvisionedCpu.Set(float64(runningNodes * config.KpNodeCores))
+			totalProvisionedMemory.Set(float64(runningNodes * (config.KpNodeMemory << 20)))
 
-		resourceStats, err := scaler.GetResourceStatistics()
-		if err != nil {
-			logger.ErrorLog.Printf("Failed to get resource stats: %s\n", err)
-			continue
+			resourceStats, err := scaler.GetResourceStatistics()
+			if err != nil {
+				logger.ErrorLog("Failed to get resource stats", "error", err)
+				continue
+			}
+
+			totalAllocatableCpu.Set(resourceStats.Allocatable.Cpu)
+			totalAllocatableMemory.Set(resourceStats.Allocatable.Memory)
+
+			totalAllocatedCpu.Set(resourceStats.Allocated.Cpu)
+			totalAllocatedMemory.Set(resourceStats.Allocated.Memory)
 		}
-
-		totalAllocatableCpu.Set(resourceStats.Allocatable.Cpu)
-		totalAllocatableMemory.Set(resourceStats.Allocatable.Memory)
-
-		totalAllocatedCpu.Set(resourceStats.Allocated.Cpu)
-		totalAllocatedMemory.Set(resourceStats.Allocated.Memory)
 	}
-
 }
 
 func Serve(
@@ -105,7 +110,7 @@ func Serve(
 		totalAllocatedMemory,
 	)
 
-	go recordMetrics(scaler, config)
+	go recordMetrics(ctx, scaler, config)
 
 	http.Handle(
 		"/metrics",

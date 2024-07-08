@@ -117,7 +117,7 @@ PODLOOP:
 				if strings.Contains(condition.Message, "Insufficient cpu") {
 					for _, container := range pod.Spec.Containers {
 						if container.Resources.Requests.Cpu().CmpInt64(kpNodeCores) >= 0 {
-							logger.WarningLog.Printf("Ignoring pod (%s) with unsatisfiable Cpu request: %f", pod.Name, container.Resources.Requests.Cpu().AsApproximateFloat64())
+							logger.WarnLog(fmt.Sprintf("Ignoring pod (%s) with unsatisfiable Cpu request: %f", pod.Name, container.Resources.Requests.Cpu().AsApproximateFloat64()))
 							continue PODLOOP
 						}
 
@@ -128,7 +128,7 @@ PODLOOP:
 				if strings.Contains(condition.Message, "Insufficient memory") {
 					for _, container := range pod.Spec.Containers {
 						if container.Resources.Requests.Memory().AsApproximateFloat64() >= maxAllocatableMemoryForSinglePod {
-							logger.WarningLog.Printf("Ignoring pod (%s) with unsatisfiable Memory request: %f", pod.Name, container.Resources.Requests.Memory().AsApproximateFloat64())
+							logger.WarnLog(fmt.Sprintf("Ignoring pod (%s) with unsatisfiable Memory request: %f", pod.Name, container.Resources.Requests.Memory().AsApproximateFloat64()))
 							continue PODLOOP
 						}
 

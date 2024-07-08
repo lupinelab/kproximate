@@ -23,7 +23,7 @@ func NewRabbitmqConnection(rabbitConfig config.RabbitConfig) (*amqp.Connection, 
 
 	conn, err := amqp.DialTLS(rabbitMQUrl, tls)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to connect to RabbitMQ: %s", err)
+		logger.ErrorLog("Failed to connect to RabbitMQ", "error", err)
 	}
 
 	tr := &http.Transport{
@@ -39,7 +39,7 @@ func NewRabbitmqConnection(rabbitConfig config.RabbitConfig) (*amqp.Connection, 
 func NewChannel(conn *amqp.Connection) *amqp.Channel {
 	ch, err := conn.Channel()
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to open a channel: %s", err)
+		logger.ErrorLog("Failed to open a channel", "error", err)
 	}
 
 	return ch
@@ -60,7 +60,7 @@ func DeclareQueue(ch *amqp.Channel, queueName string) *amqp.Queue {
 		args,      // arguments
 	)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to declare a queue: %s", err)
+		logger.ErrorLog("Failed to declare a queue", "error", err)
 	}
 
 	return &q

@@ -8,6 +8,7 @@ import (
 )
 
 type KproximateConfig struct {
+	Debug                   bool   `env:"debug"`
 	KpJoinCommand           string `env:"kpJoinCommand"`
 	KpNodeCores             int    `env:"kpNodeCores"`
 	KpNodeDisableSsh        bool   `env:"kpNodeDisableSsh"`

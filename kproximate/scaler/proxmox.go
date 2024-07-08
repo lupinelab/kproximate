@@ -100,6 +100,7 @@ func (scaler *ProxmoxScaler) requiredScaleEvents(requiredResources kubernetes.Un
 		}
 
 		requiredScaleEvents = append(requiredScaleEvents, &scaleEvent)
+		logger.DebugLog("Generated scale event", "scaleEvent", fmt.Sprintf("%+v", scaleEvent))
 	}
 
 	// If there are no worker nodes then pods can fail to schedule due to a control-plane taint, trigger a scaling event
@@ -117,6 +118,7 @@ func (scaler *ProxmoxScaler) requiredScaleEvents(requiredResources kubernetes.Un
 			}
 
 			requiredScaleEvents = append(requiredScaleEvents, &scaleEvent)
+			logger.DebugLog("Generated scale event due to control=plane taint", "scaleEvent", fmt.Sprintf("%+v", scaleEvent))
 		}
 	}
 
@@ -126,7 +128,11 @@ func (scaler *ProxmoxScaler) requiredScaleEvents(requiredResources kubernetes.Un
 func (scaler *ProxmoxScaler) RequiredScaleEvents(allScaleEvents int) ([]*ScaleEvent, error) {
 	unschedulableResources, err := scaler.Kubernetes.GetUnschedulableResources(int64(scaler.config.KpNodeCores), scaler.config.KpNodeNameRegex)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to get unschedulable resources: %s", err.Error())
+		logger.ErrorLog("Failed to get unschedulable resources:", "error", err)
+	}
+
+	if unschedulableResources != (kubernetes.UnschedulableResources{}) {
+		logger.DebugLog("Found unschedulable resources", "resources", fmt.Sprintf("%+v", unschedulableResources))
 	}
 
 	return scaler.requiredScaleEvents(unschedulableResources, allScaleEvents)
@@ -152,20 +158,18 @@ skipHost:
 		return host
 	}
 
-	return proxmox.HostInformation{}
+	return selectMaxAvailableMemHost(hosts)
 }
 
 func selectMaxAvailableMemHost(hosts []proxmox.HostInformation) proxmox.HostInformation {
-	// Select a node with the most available memory
-	maxAvailMemNode := hosts[0]
-
+	selectedHostHost := hosts[0]
 	for _, host := range hosts {
-		if (host.Maxmem - host.Mem) > (maxAvailMemNode.Maxmem - maxAvailMemNode.Mem) {
-			maxAvailMemNode = host
+		if (host.Maxmem - host.Mem) > (selectedHostHost.Maxmem - selectedHostHost.Mem) {
+			selectedHostHost = host
 		}
 	}
 
-	return maxAvailMemNode
+	return selectedHostHost
 }
 
 func (scaler *ProxmoxScaler) SelectTargetHosts(scaleEvents []*ScaleEvent) error {
@@ -181,10 +185,7 @@ func (scaler *ProxmoxScaler) SelectTargetHosts(scaleEvents []*ScaleEvent) error 
 
 	for _, scaleEvent := range scaleEvents {
 		scaleEvent.TargetHost = selectTargetHost(hosts, kpNodes, scaleEvents)
-
-		if scaleEvent.TargetHost == (proxmox.HostInformation{}) {
-			scaleEvent.TargetHost = selectMaxAvailableMemHost(hosts)
-		}
+		logger.DebugLog(fmt.Sprintf("Selected target host %s for %s", scaleEvent.TargetHost.Node, scaleEvent.NodeName))
 	}
 
 	return nil
@@ -236,7 +237,7 @@ func (scaler *ProxmoxScaler) labelNode(scaleEvent *ScaleEvent) error {
 		if templateLabelRegex.MatchString(value) {
 			template := strings.Trim(templateLabelRegex.FindStringSubmatch(value)[1], " ")
 			if template != "targetHost" {
-				logger.WarningLog.Printf("Found invalid label value template %s for key %s, skipping label.", value, template)
+				logger.WarnLog(fmt.Sprintf("Found invalid label value template %s for key %s, skipping label.", value, template))
 				continue
 			}
 			value = scaleEvent.TargetHost.Node
@@ -249,7 +250,7 @@ func (scaler *ProxmoxScaler) labelNode(scaleEvent *ScaleEvent) error {
 }
 
 func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
-	logger.InfoLog.Printf("Provisioning %s on %s", scaleEvent.NodeName, scaleEvent.TargetHost.Node)
+	logger.InfoLog(fmt.Sprintf("Provisioning %s on %s", scaleEvent.NodeName, scaleEvent.TargetHost.Node))
 
 	okChan := make(chan bool)
 	defer close(okChan)
@@ -284,7 +285,7 @@ func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent
 		return err
 	}
 
-	logger.InfoLog.Printf("Started %s", scaleEvent.NodeName)
+	logger.InfoLog(fmt.Sprintf("Started %s", scaleEvent.NodeName))
 
 	if scaler.config.KpQemuExecJoin {
 		go scaler.Proxmox.CheckNodeReady(pctx, okChan, errChan, scaleEvent.NodeName)
@@ -301,7 +302,7 @@ func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent
 		}
 	}
 
-	logger.InfoLog.Printf("Waiting for %s to join kubernetes cluster", scaleEvent.NodeName)
+	logger.InfoLog(fmt.Sprintf("Waiting for %s to join kubernetes cluster", scaleEvent.NodeName))
 
 	kctx, cancelKCtx := context.WithTimeout(
 		ctx,
@@ -325,7 +326,7 @@ func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent
 		return err
 	}
 
-	logger.InfoLog.Printf("%s joined kubernetes cluster", scaleEvent.NodeName)
+	logger.InfoLog(fmt.Sprintf("%s joined kubernetes cluster", scaleEvent.NodeName))
 
 	if scaler.config.KpNodeLabels != "" {
 		err := scaler.labelNode(scaleEvent)
@@ -333,14 +334,14 @@ func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent
 			return err
 		}
 
-		logger.InfoLog.Printf("Set labels on %s", scaleEvent.NodeName)
+		logger.InfoLog(fmt.Sprintf("Set labels on %s", scaleEvent.NodeName))
 	}
 
 	return nil
 }
 
 func (scaler *ProxmoxScaler) joinByQemuExec(nodeName string) error {
-	logger.InfoLog.Printf("Executing join command on %s", nodeName)
+	logger.InfoLog(fmt.Sprintf("Executing join command on %s", nodeName))
 	joinExecPid, err := scaler.Proxmox.QemuExecJoin(nodeName, scaler.config.KpJoinCommand)
 	if err != nil {
 		return err
@@ -364,7 +365,7 @@ func (scaler *ProxmoxScaler) joinByQemuExec(nodeName string) error {
 	if status.ExitCode != 0 {
 		return fmt.Errorf("join command for %s failed:\n%s", nodeName, status.OutData)
 	} else {
-		logger.InfoLog.Printf("Join command for %s executed successfully", nodeName)
+		logger.InfoLog(fmt.Sprintf("Join command for %s executed successfully", nodeName))
 		return nil
 	}
 }

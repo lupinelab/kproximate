@@ -1,24 +1,68 @@
 package logger
 
 import (
-	"fmt"
-	"log"
+	"log/slog"
 	"os"
 )
 
-var (
-	InfoLog    *log.Logger
-	WarningLog *log.Logger
-	ErrorLog   *log.Logger
-)
+// A default logger for tests to use, this will be replaced when
+// ConfigureLogger is called by each component.
+var Logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+var logArgs []any
 
 func init() {
-	controllerName, err := os.Hostname()
+}
+
+func ConfigureLogger(component string, debug bool) {
+	var err error
+	hostname, err := os.Hostname()
 	if err != nil {
-		log.Panicf("Could not get worker name: %s", err)
+		Logger.Error("Could not get hostname", "error", err)
 	}
 
-	InfoLog = log.New(os.Stdout, fmt.Sprintf("INFO: %s ", controllerName), log.Ldate|log.Ltime)
-	WarningLog = log.New(os.Stdout, fmt.Sprintf("WARNING: %s ", controllerName), log.Ldate|log.Ltime)
-	ErrorLog = log.New(os.Stdout, fmt.Sprintf("ERROR: %s ", controllerName), log.Ldate|log.Ltime)
+	logArgs = []any{
+		"host", hostname,
+		"component", component,
+	}
+
+	var level slog.Level
+	if debug {
+		level = slog.LevelDebug
+	} else {
+		level = slog.LevelInfo
+	}
+
+	Logger = slog.New(slog.NewTextHandler(
+		os.Stdout,
+		&slog.HandlerOptions{
+			Level: level,
+		},
+	))
+
+	slog.SetDefault(Logger)
+}
+
+func DebugLog(msg string, args ...any) {
+	args = append(logArgs, args...)
+	Logger.Debug(msg, args...)
+}
+
+func InfoLog(msg string, args ...any) {
+	args = append(logArgs, args...)
+	Logger.Info(msg, args...)
+}
+
+func WarnLog(msg string, args ...any) {
+	args = append(logArgs, args...)
+	Logger.Warn(msg, args...)
+}
+
+func ErrorLog(msg string, args ...any) {
+	args = append(logArgs, args...)
+	Logger.Error(msg, args...)
+}
+
+func FatalLog(msg string, err error) {
+	Logger.Error(msg, "error", err)
+	panic(err)
 }

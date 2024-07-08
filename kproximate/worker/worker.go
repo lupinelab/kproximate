@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,17 +19,19 @@ import (
 func main() {
 	kpConfig, err := config.GetKpConfig()
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to get config: %s", err.Error())
+		logger.ErrorLog("Failed to get config", "error", err)
 	}
+
+	logger.ConfigureLogger("worker", kpConfig.Debug)
 
 	scaler, err := scaler.NewProxmoxScaler(kpConfig)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to initialise scaler: %s", err.Error())
+		logger.ErrorLog("Failed to initialise scaler", "error", err)
 	}
 
 	rabbitConfig, err := config.GetRabbitConfig()
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to get rabbit config: %s", err.Error())
+		logger.ErrorLog("Failed to get rabbit config", "error", err)
 	}
 
 	conn, _ := rabbitmq.NewRabbitmqConnection(rabbitConfig)
@@ -43,7 +46,7 @@ func main() {
 		false,
 	)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to set scale up QoS: %s", err)
+		logger.ErrorLog("Failed to set scale up QoS", "error", err)
 	}
 
 	scaleDownChannel := rabbitmq.NewChannel(conn)
@@ -55,7 +58,7 @@ func main() {
 		false,
 	)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to set scale down QoS: %s", err)
+		logger.ErrorLog("Failed to set scale down QoS", "error", err)
 	}
 
 	scaleUpMsgs, err := scaleUpChannel.Consume(
@@ -68,7 +71,7 @@ func main() {
 		nil,
 	)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to register scale up consumer: %s", err)
+		logger.ErrorLog("Failed to register scale up consumer", "error", err)
 	}
 
 	scaleDownMsgs, err := scaleDownChannel.Consume(
@@ -81,7 +84,7 @@ func main() {
 		nil,
 	)
 	if err != nil {
-		logger.ErrorLog.Fatalf("Failed to register scale down consumer: %s", err)
+		logger.ErrorLog("Failed to register scale down consumer", "error", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -93,7 +96,7 @@ func main() {
 	}()
 
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	logger.InfoLog.Println("Listening for scale events")
+	logger.InfoLog("Listening for scale events")
 
 	for {
 		select {
@@ -115,14 +118,14 @@ func consumeScaleUpMsg(ctx context.Context, kpScaler scaler.Scaler, scaleUpMsg a
 
 	if scaleUpMsg.Redelivered {
 		kpScaler.DeleteNode(ctx, scaleUpEvent.NodeName)
-		logger.InfoLog.Printf("Retrying scale up event: %s", scaleUpEvent.NodeName)
+		logger.InfoLog(fmt.Sprintf("Retrying scale up event: %s", scaleUpEvent.NodeName))
 	} else {
-		logger.InfoLog.Printf("Triggered scale up event: %s", scaleUpEvent.NodeName)
+		logger.InfoLog(fmt.Sprintf("Triggered scale up event: %s", scaleUpEvent.NodeName))
 	}
 
 	err := kpScaler.ScaleUp(ctx, scaleUpEvent)
 	if err != nil {
-		logger.WarningLog.Printf("Scale up event failed: %s", err.Error())
+		logger.WarnLog("Scale up event failed", "error", err.Error())
 		kpScaler.DeleteNode(ctx, scaleUpEvent.NodeName)
 		scaleUpMsg.Reject(true)
 		return
@@ -136,9 +139,9 @@ func consumeScaleDownMsg(ctx context.Context, kpScaler scaler.Scaler, scaleDownM
 	json.Unmarshal(scaleDownMsg.Body, &scaleDownEvent)
 
 	if scaleDownMsg.Redelivered {
-		logger.InfoLog.Printf("Retrying scale down event: %s", scaleDownEvent.NodeName)
+		logger.InfoLog(fmt.Sprintf("Retrying scale down event: %s", scaleDownEvent.NodeName))
 	} else {
-		logger.InfoLog.Printf("Triggered scale down event: %s", scaleDownEvent.NodeName)
+		logger.InfoLog(fmt.Sprintf("Triggered scale down event: %s", scaleDownEvent.NodeName))
 	}
 
 	scaleCtx, scaleCancel := context.WithDeadline(ctx, time.Now().Add(time.Second*300))
@@ -146,11 +149,11 @@ func consumeScaleDownMsg(ctx context.Context, kpScaler scaler.Scaler, scaleDownM
 
 	err := kpScaler.ScaleDown(scaleCtx, scaleDownEvent)
 	if err != nil {
-		logger.WarningLog.Printf("Scale down event failed: %s", err.Error())
+		logger.WarnLog(fmt.Sprintf("Scale down event failed: %s", err.Error()))
 		scaleDownMsg.Reject(true)
 		return
 	}
 
-	logger.InfoLog.Printf("Deleted %s", scaleDownEvent.NodeName)
+	logger.InfoLog(fmt.Sprintf("Deleted %s", scaleDownEvent.NodeName))
 	scaleDownMsg.Ack(false)
 }

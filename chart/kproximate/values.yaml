@@ -4,6 +4,9 @@
 
 kproximate:
   config:
+    ## Verbose logging
+    debug: false
+
     ## The period to wait for a provisioned node to join the kubernetes cluster before the scaling 
     ## event is declared to have failed.
     waitSecondsForJoin: 120
