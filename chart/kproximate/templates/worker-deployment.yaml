@@ -25,7 +25,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: "{{ .Chart.Name }}-worker"
-          image: "{{ .Values.image.registry }}/kproximate-worker:{{ .Chart.AppVersion }}"
+          image: "{{ .Values.image.registry }}/kproximate-worker:{{ .Chart.Version }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
           - configMapRef:

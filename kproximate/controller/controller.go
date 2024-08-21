@@ -107,6 +107,9 @@ func assessScaleUp(
 		}
 
 		if len(scaleUpEvents) > 0 {
+			maxScaleEvents := config.MaxKpNodes - (numKpNodes + allScaleEvents)
+			numScaleEvents := min(maxScaleEvents, len(scaleUpEvents))
+			scaleUpEvents = scaleUpEvents[0:numScaleEvents]
 			logger.DebugLog("Selecting target hosts")
 			err = scaler.SelectTargetHosts(scaleUpEvents)
 			if err != nil {
