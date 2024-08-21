@@ -478,3 +478,31 @@ func TestJoinByQemuExecFail(t *testing.T) {
 		t.Error("Expected the join command to fail")
 	}
 }
+
+func TestParseNodeLabels(t *testing.T) {
+	s := ProxmoxScaler{
+		config: config.KproximateConfig{
+			KpNodeLabels: "topology.kubernetes.io/region=proxmox-cluster,topology.kubernetes.io/zone={{ .TargetHost }}",
+		},
+	}
+
+	labels, err := s.renderNodeLabels(
+		&ScaleEvent{
+			TargetHost: proxmox.HostInformation{
+				Node: "proxmox-node-01",
+			},
+		},
+	)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if labels["topology.kubernetes.io/region"] != "proxmox-cluster" {
+		t.Errorf("Expected topology.kubernetes.io/region label to have 'proxmox-cluster' as value, got %s", labels["topology.kubernetes.io/region"])
+	}
+
+	if labels["topology.kubernetes.io/zone"] != "proxmox-node-01" {
+		t.Errorf("Expected topology.kubernetes.io/zone label to have 'proxmox-node-01' as value, got %s", labels["topology.kubernetes.io/zone"])
+	}
+}

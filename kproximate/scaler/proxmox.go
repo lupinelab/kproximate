@@ -1,12 +1,14 @@
 package scaler
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
 	"net/url"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/lupinelab/kproximate/config"
@@ -15,8 +17,6 @@ import (
 	"github.com/lupinelab/kproximate/proxmox"
 	"k8s.io/apimachinery/pkg/util/uuid"
 )
-
-var templateLabelRegex = regexp.MustCompile(`^{{(.*)}}$`)
 
 type ProxmoxScaler struct {
 	config     config.KproximateConfig
@@ -229,24 +229,35 @@ func waitForNodeJoin(ctx context.Context, cancel context.CancelFunc, scaleEvent 
 	}
 }
 
-func (scaler *ProxmoxScaler) labelNode(scaleEvent *ScaleEvent) error {
+func (scaler *ProxmoxScaler) renderNodeLabels(scaleEvent *ScaleEvent) (map[string]string, error) {
 	labels := map[string]string{}
 	for _, label := range strings.Split(scaler.config.KpNodeLabels, ",") {
 		key := strings.Split(label, "=")[0]
 		value := strings.Split(label, "=")[1]
-		if templateLabelRegex.MatchString(value) {
-			template := strings.Trim(templateLabelRegex.FindStringSubmatch(value)[1], " ")
-			if template != "targetHost" {
-				logger.WarnLog(fmt.Sprintf("Found invalid label value template %s for key %s, skipping label.", value, template))
-				continue
-			}
-			value = scaleEvent.TargetHost.Node
+
+		templateValues := struct {
+			TargetHost string
+		}{
+			TargetHost: scaleEvent.TargetHost.Node,
 		}
 
-		labels[key] = value
+		tmpl, err := template.New("labelValue").Parse(value)
+		if err != nil {
+			logger.WarnLog(fmt.Sprintf("Failed to parse node label template %s=%s, skipping label.", key, value))
+			continue
+		}
+
+		renderedValue := new(bytes.Buffer)
+		err = tmpl.Execute(renderedValue, templateValues)
+		if err != nil {
+			logger.WarnLog(fmt.Sprintf("Failed to render node label template %s=%s, skipping label.", key, value))
+			continue
+		}
+
+		labels[key] = renderedValue.String()
 	}
 
-	return scaler.Kubernetes.LabelKpNode(scaleEvent.NodeName, labels)
+	return labels, nil
 }
 
 func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent) error {
@@ -329,7 +340,12 @@ func (scaler *ProxmoxScaler) ScaleUp(ctx context.Context, scaleEvent *ScaleEvent
 	logger.InfoLog(fmt.Sprintf("%s joined kubernetes cluster", scaleEvent.NodeName))
 
 	if scaler.config.KpNodeLabels != "" {
-		err := scaler.labelNode(scaleEvent)
+		labels, err := scaler.renderNodeLabels(scaleEvent)
+		if err != nil {
+			return err
+		}
+
+		err = scaler.Kubernetes.LabelKpNode(scaleEvent.NodeName, labels)
 		if err != nil {
 			return err
 		}

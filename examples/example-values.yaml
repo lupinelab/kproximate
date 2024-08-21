@@ -4,6 +4,7 @@ kproximate:
     kpNodeMemory: 2048
     kpNodeNamePrefix: kp-node
     kpNodeTemplateName: kproximate-template
+    kpNodeLabels: "topology.kubernetes.io/region=promxomx-cluster,topology.kubernetes.io/zone={{ targetHost }}"
     loadHeadroom: 0.2
     maxKpNodes: 4
     pmUrl: https://<proxmox-host>:8006/api2/json
