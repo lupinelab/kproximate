@@ -118,7 +118,7 @@ rabbitmq:
       effect: NoSchedule
 
 image:
-  registry: lupinelab
+  registry: ghcr.io/lupinelab
   pullPolicy: IfNotPresent
 
 nameOverride: ""

@@ -32,7 +32,7 @@ jobs:
           command: go test ./...
   build_image:
     docker:
-      - image: cimg/go:1.20
+      - image: cimg/base:current
     parameters:
       component:
         type: string    
@@ -43,11 +43,11 @@ jobs:
           name: Setup docker buildx
           command: docker buildx create --use --name multiarch --driver docker-container
       - run:
-          name: Login to dockerhub
-          command: docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
+          name: Login to ghcr
+          command: echo $GITHUB_TOKEN | docker login ghcr.io -u $CIRCLE_PROJECT_USERNAME --password-stdin
       - run:
           name: Build & push << parameters.component >> image
-          command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.<< parameters.component >> -t lupinelab/kproximate-<< parameters.component >>:$CIRCLE_TAG --push . 
+          command: docker buildx build --platform linux/amd64,linux/arm64 -f docker/Dockerfile.<< parameters.component >> -t ghcr.io/lupinelab/kproximate-<< parameters.component >>:$CIRCLE_TAG --push . 
   publish_helm_chart:
     docker:
       - image: cimg/base:current
@@ -61,8 +61,11 @@ jobs:
             helm dependency build ./chart/kproximate/
             helm package ./chart/kproximate --version $CIRCLE_TAG
       - run:
+          name: Login to ghcr
+          command: echo $GITHUB_TOKEN | docker login ghcr.io -u $CIRCLE_PROJECT_USERNAME --password-stdin
+      - run:
           name: Push the helm chart
-          command: helm cm-push kproximate-$CIRCLE_TAG.tgz https://charts.lupinelab.co.uk
+          command: helm push kproximate-$CIRCLE_TAG.tgz oci://ghcr.io/$CIRCLE_PROJECT_USERNAME
 
 workflows:
   test_build_and_publish:
@@ -74,7 +77,7 @@ workflows:
       - build_image:
           name: build << matrix.component >> image
           context:
-            - dockerhub
+            - github
           requires:
             - test
           matrix:
@@ -87,7 +90,7 @@ workflows:
               only: /\d+\.\d+\.\d+/
       - publish_helm_chart:
           context:
-            - charts.lupinelab.co.uk
+            - github
           requires:
             - test
             - build_image

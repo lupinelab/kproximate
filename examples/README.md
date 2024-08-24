@@ -32,29 +32,27 @@ Alternatively you may use password authentication with a user that has the above
 
 ## Proxmox Template
 
-The [create_kproximate_template.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template.sh) script shows a working example of how to create a K3S template node that will automatically join the Kubernetes cluster when booted.
+There are two types of template that may be created, each using a different method to join the cluster, qemu-exec and first boot.
 
-This script should be run on a host in the Proxmox cluster after configuring the the variables at the top with values appropriate for your cluster.
+Both methods require a script to be run on a host in the Proxmox cluster after configuring the the variables at the top with values appropriate for your cluster.
 
 Special consideration should be given to the STORAGE variable whose value should be the name of the storage on which you wish to store the template.
 
 When running the script it requires two args. First the codename of an ubuntu release (e.g. "jammy") and then the VMID to assign to the template. 
 
-The VMID should also be chosen carefully since all kproximate nodes created will be assigned to the next available VMID after that of the template.
+Consideration should be given to the VMID as all kproximate nodes created will be assigned to the next available VMID after that of the template.
 
 Example:
 
-```./create_kproximate_template.sh jammy 600```
+```./create_kproximate_template_exec.sh jammy 600```
 
-### Using local storage
+### Join by qemu-exec (recommended)
 
-Those wishing to use local storage can set `kpLocalTemplateStorage: true` in their configuration and create a template on each Proxmox node with an identical name but a different VMID.
+The [create_kproximate_template_exec.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template_exec.sh) script creates a template that joins the Kubernetes cluster using a command that is executed by qemu-exec.
 
-### Join via qemu-exec (***experimental***)
-
-You may also create a template that does not automatically join the cluster on first boot and instead is triggered to join the cluster via qemu-exec. The [create_kproximate_template_exec.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template_exec.sh) script is exactly the same as the standard script but omits the firstboot-command.
-
-The benefits of this are that the template does not contain secrets and can also be re-used accross mutliple clusters.
+The benefits of this are:
+  - The template does not contain secrets
+  - The template can be re-used across mutliple k3s clusters
 
 If using this method you must supply the following values:
 
@@ -68,19 +66,24 @@ kproximate:
  
 The value of `kpJoinCommand` is executed on the new node as follows: `bash -c <your-join-command>`.
 
+### Join on first boot
+
+The [create_kproximate_template.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template.sh) script creates a template that joins the Kubernetes cluster automatically on first boot.
+
+### Using local storage
+
+Those wishing to use local storage can set `kpLocalTemplateStorage: true` in their configuration and create a template on each Proxmox node with an identical name but a different VMID.
+
 ### Custom templates
 
 If creating your own template please consider the following:
 
-* As previously stated, the template must join your kubernetes cluster with zero interaction. I found that the `virt-customize` package was the easiest way to do this.
+* It should have `qemu-guest-agent` installed.
 * It should be a cloud-init enabled image in order for ssh key injection to work.
 * The final template should have a cloudinit disk added to it.
-* Ensure that each time it is booted the template will generate a new machine-id. I found that this was only achieveable when truncating (and not removing) `/etc/machine-id` with the `virt-customize --truncate` command at the end of my configuration steps.
+* Ensure that each time it is booted the template will generate a new machine-id. I found that this was only achieveable when truncating (and not removing) `/etc/machine-id` with the `virt-customize --truncate` command at the end of the configuration steps.
 * It should be configured to receive a DHCP IP lease.
 * If you are using VLANs ensure it is tagged appropriately, ie the one your kubernetes cluster resides in.
-* It should have `qemu-guest-agent` installed.
-
-See [create_kproximate_template.sh](https://github.com/lupinelab/kproximate/tree/main/examples/create_kproximate_template.sh) for examples of the above.
 
 ## Networking
 
@@ -88,18 +91,16 @@ The template should be configured to reside in the same network as your Kubernet
 
 This network should also provide a DHCP server so that new kproximate nodes can aquire an IP address.
 
-Your Proxmox API endpoint should also be accessible from this network. In my case I have a firewall rule between the two VLANS that my Proxmox and Kubernetes clusters are in.
+Your Proxmox API endpoint should also be accessible from this network. For example, in my case I have a firewall rule between the two VLANS that my Proxmox and Kubernetes clusters are in.
 
 ## Installing kproximate
 
-A helm chart is provided at https://charts.lupinelab.co.uk/ for installing the application into your kubernetes cluster. See [example-values.yaml](https://github.com/lupinelab/kproximate/tree/main/examples/example-values.yaml) for a basic configuraton example.
+*NOTE: All charts have now been moved to oci://gchr.io/lupinelab/kproximate, all versions up to 0.1.9 have been duplicated here but new versions will NOT be published on the old repository https://charts.lupinelab.co.uk*
 
-Add the repo:
-
-`helm repo add lupinelab https://charts.lupinelab.co.uk`
+A helm chart is provided at oci://ghcr.io/lupinelab for installing the application into your kubernetes cluster. See [example-values.yaml](https://github.com/lupinelab/kproximate/tree/main/examples/example-values.yaml) for a basic configuraton example.
 
 Install kproximate:
 
-`helm install kproximate lupinelab/kproximate -f your-values.yaml -n kproximate --create-namespace`
+`helm install kproximate oci://ghcr.io/lupinelab/kproximate -f your-values.yaml -n kproximate --create-namespace`
 
 See [values.yaml](https://github.com/lupinelab/kproximate/tree/main/chart/kproximate/values.yaml) in the helm chart for the full set of configuration options and defaults.
