@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"k8s.io/client-go/util/retry"
 )
 
 type Kubernetes interface {
@@ -190,8 +191,7 @@ func (k *KubernetesClient) GetWorkerNodes() ([]apiv1.Node, error) {
 		return nil, err
 	}
 
-	labelSelector := labels.NewSelector()
-	labelSelector = labelSelector.Add(
+	labelSelector := labels.NewSelector().Add(
 		*noControlPlaneLabel,
 		*noMasterLabel,
 	)
@@ -211,7 +211,6 @@ func (k *KubernetesClient) GetWorkerNodes() ([]apiv1.Node, error) {
 		for _, condition := range node.Status.Conditions {
 			if condition.Type == apiv1.NodeReady && condition.Status == apiv1.ConditionTrue {
 				workerNodes = append(workerNodes, node)
-
 			}
 		}
 	}
@@ -419,38 +418,43 @@ func (k *KubernetesClient) DeleteKpNode(ctx context.Context, kpNodeName string) 
 }
 
 func (k *KubernetesClient) LabelKpNode(kpNodeName string, newKpNodeLabels map[string]string) error {
-	kpNode, err := k.client.CoreV1().Nodes().Get(
-		context.TODO(),
-		kpNodeName,
-		metav1.GetOptions{},
+	return retry.RetryOnConflict(
+		retry.DefaultRetry,
+		func() error {
+			kpNode, err := k.client.CoreV1().Nodes().Get(
+				context.TODO(),
+				kpNodeName,
+				metav1.GetOptions{},
+			)
+			if err != nil {
+				return err
+			}
+
+			kpNodeLabels := kpNode.GetLabels()
+			for key, value := range newKpNodeLabels {
+				kpNodeLabels[key] = value
+			}
+
+			kpNode.SetLabels(kpNodeLabels)
+
+			_, err = k.client.CoreV1().Nodes().Update(
+				context.TODO(),
+				kpNode,
+				metav1.UpdateOptions{},
+			)
+
+			return err
+		},
 	)
-	if err != nil {
-		return err
-	}
-
-	kpNodeLabels := kpNode.GetLabels()
-	for key, value := range newKpNodeLabels {
-		kpNodeLabels[key] = value
-	}
-
-	kpNode.SetLabels(kpNodeLabels)
-
-	_, err = k.client.CoreV1().Nodes().Update(
-		context.TODO(),
-		kpNode,
-		metav1.UpdateOptions{},
-	)
-
-	return err
 }
 
 func (k *KubernetesClient) getMaxAllocatableMemoryForSinglePod(kpNodeNameRegex regexp.Regexp) (float64, error) {
-	var maxAllocatable float64
 	kpNodes, err := k.GetKpNodes(kpNodeNameRegex)
 	if err != nil {
 		return 0.0, err
 	}
 
+	var maxAllocatable float64
 	for _, node := range kpNodes {
 		if node.Status.Allocatable.Memory().AsApproximateFloat64() > maxAllocatable {
 			maxAllocatable = node.Status.Allocatable.Memory().AsApproximateFloat64()
